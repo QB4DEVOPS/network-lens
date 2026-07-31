@@ -51,7 +51,11 @@ GitHub Actions workflow (`.github/workflows/ci.yml`) runs on push/PR:
 - Backend: `pytest` + smoke tests
 - Frontend: `npm ci` + `npm run build`
 
-## Example CLI
+## Example — type left, **learn right**
+
+The CLI is how you *enter* config. **nac.yaml is what you're building** — drop this into a real NaC repo.
+
+**Left (CLI input)** — familiar, abbreviated:
 
 ```
 hostn R1
@@ -63,7 +67,32 @@ ipv6 enable
 ipv6 address 2001:db8::1/64
 ```
 
-Abbreviations: `hostn`, `int`, `no sh`, `ip add`, `lo0`, `g0/0/0`.
+**Right (nac.yaml)** — the strong side, `iosxe.devices[]`:
+
+```yaml
+iosxe:
+  devices:
+  - name: iosv-01
+    configuration:
+      system:
+        hostname: "R1"
+        ipv6_unicast_routing: true
+      interfaces:
+        loopbacks:
+        - id: '0'
+          ipv4:
+            address: "10.0.0.1"
+            address_mask: "255.255.255.255"
+          ipv6:
+            enable: true
+            addresses:
+              - prefix: "2001:db8::1/64"
+          shutdown: false
+```
+
+That's the lesson: **`configuration:` is where router config lives.** CLI lines become typed fields under `iosxe.devices[].configuration.*` — ready for `netascode/nac-iosxe` and `nac-validate`.
+
+CLI abbreviations (left pane only): `hostn`, `int`, `no sh`, `ip add`, `lo0`, `g0/0/0`.
 
 ## Architecture
 
