@@ -1,0 +1,184 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+  font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+  background: #1e1e1e;
+  color: #d4d4d4;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1.25rem;
+  background: #252526;
+  border-bottom: 1px solid #3c3c3c;
+  flex-shrink: 0;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.logo {
+  font-size: 1.25rem;
+  color: #4ec9b0;
+}
+
+.header h1 {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.tagline {
+  font-size: 0.8rem;
+  color: #858585;
+  margin-left: 0.5rem;
+}
+
+.status-bar {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.badge {
+  font-size: 0.75rem;
+  padding: 0.2rem 0.55rem;
+  border-radius: 4px;
+  background: #3c3c3c;
+  color: #cccccc;
+}
+
+.badge.accent {
+  background: #264f3a;
+  color: #4ec9b0;
+}
+
+.badge.muted {
+  background: #333;
+  color: #858585;
+}
+
+.badge.error {
+  background: #5a1d1d;
+  color: #f48771;
+}
+
+.badge.link {
+  background: #264f78;
+  color: #9cdcfe;
+}
+
+/* Monaco line-link highlights (global — decorations render outside React tree) */
+.line-highlight-linked {
+  background: rgba(78, 201, 176, 0.12) !important;
+}
+
+.line-highlight-margin {
+  background: #4ec9b0;
+  width: 4px !important;
+  margin-left: 3px;
+}
+
+.warnings-bar {
+  flex-shrink: 0;
+  background: #3a2d1a;
+  border-bottom: 1px solid #5a4a2a;
+  padding: 0.4rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.warning-item {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  font-size: 0.78rem;
+  flex-wrap: wrap;
+}
+
+.warning-line {
+  color: #dcdcaa;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.warning-msg {
+  color: #f0c674;
+}
+
+.warning-cli {
+  color: #858585;
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 0.75rem;
+}
+
+.panes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  flex: 1;
+  min-height: 0;
+}
+
+.pane {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-right: 1px solid #3c3c3c;
+}
+
+.pane:last-child {
+  border-right: none;
+}
+
+.pane-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 0.4rem 0.75rem;
+  background: #2d2d2d;
+  border-bottom: 1px solid #3c3c3c;
+  flex-shrink: 0;
+}
+
+.pane-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #cccccc;
+}
+
+.pane-hint {
+  font-size: 0.72rem;
+  color: #858585;
+}
+
+.pane > section,
+.pane > div:last-child {
+  flex: 1;
+  min-height: 0;
+}
+
+.pane .monaco-editor {
+  flex: 1;
+}

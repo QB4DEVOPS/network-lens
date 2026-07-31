@@ -1,0 +1,14 @@
+node_modules/
+dist/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+backend/.api_port
+frontend/.env
+backend/data/
+tmp_*.yaml
+*.db
+*.tsbuildinfo
+frontend/vite.config.js
+frontend/vite.config.d.ts

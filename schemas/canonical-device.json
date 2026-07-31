@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://network-lens.dev/schemas/canonical-device.json",
+  "title": "Network Lens Canonical Device",
+  "description": "Vendor-neutral device intent aligned with iosxe.devices[]",
+  "type": "object",
+  "required": ["name", "system", "interfaces"],
+  "properties": {
+    "name": { "type": "string" },
+    "host": { "type": ["string", "null"] },
+    "system": {
+      "type": "object",
+      "properties": {
+        "hostname": { "type": ["string", "null"] },
+        "ipv6_unicast_routing": { "type": "boolean" }
+      }
+    },
+    "interfaces": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/interface" }
+    },
+    "static_routes": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/staticRoute" }
+    }
+  },
+  "$defs": {
+    "interface": {
+      "type": "object",
+      "required": ["name", "kind"],
+      "properties": {
+        "name": { "type": "string" },
+        "kind": { "enum": ["loopback", "ethernet", "tunnel", "vlan"] },
+        "shutdown": { "type": "boolean" },
+        "description": { "type": ["string", "null"] },
+        "ipv4_address": { "type": ["string", "null"] },
+        "ipv4_address_mask": { "type": ["string", "null"] },
+        "ipv4_dhcp": { "type": "boolean" }
+      }
+    },
+    "staticRoute": {
+      "type": "object",
+      "required": ["prefix"],
+      "properties": {
+        "prefix": { "type": "string" },
+        "next_hop": { "type": ["string", "null"] },
+        "interface": { "type": ["string", "null"] }
+      }
+    }
+  }
+}
