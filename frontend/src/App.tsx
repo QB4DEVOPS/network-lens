@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Editor, { OnMount } from "@monaco-editor/react";
 import type { editor as MonacoEditor } from "monaco-editor";
 import { validateBackend, validateSync, type BackendManifest } from "./apiContract";
+import { SplitPane } from "./SplitPane";
 
 const API_PORT = import.meta.env.VITE_API_PORT || "8000";
 
@@ -317,49 +318,58 @@ export default function App() {
       )}
 
       <main className="panes">
-        <section className="pane">
-          <div className="pane-header">
-            <span className="pane-label">CLI input</span>
-            <span className="pane-hint">Click a line ↔ highlights nac.yaml · lo 999, g 0/0, tun 10, vlan 888</span>
-          </div>
-          <Editor
-            height="100%"
-            language="plaintext"
-            theme="vs-dark"
-            value={cliText}
-            onMount={onCliMount}
-            onChange={(v) => setCliText(v ?? "")}
-            options={{
-              minimap: { enabled: false },
-              fontSize: 14,
-              lineNumbers: "on",
-              scrollBeyondLastLine: false,
-              wordWrap: "on",
-            }}
-          />
-        </section>
-
-        <section className="pane">
-          <div className="pane-header">
-            <span className="pane-label">nac.yaml</span>
-            <span className="pane-hint">Generated preview · read-only · iosxe.devices[]</span>
-          </div>
-          <Editor
-            height="100%"
-            language="yaml"
-            theme="vs-dark"
-            value={nacYaml}
-            onMount={onYamlMount}
-            options={{
-              readOnly: true,
-              minimap: { enabled: false },
-              fontSize: 14,
-              lineNumbers: "on",
-              scrollBeyondLastLine: false,
-              wordWrap: "on",
-            }}
-          />
-        </section>
+        <SplitPane
+          left={
+            <section className="pane">
+              <div className="pane-header">
+                <span className="pane-label">CLI input</span>
+                <span className="pane-hint">Click a line ↔ highlights nac.yaml</span>
+              </div>
+              <div className="pane-editor">
+                <Editor
+                  height="100%"
+                  language="plaintext"
+                  theme="vs-dark"
+                  value={cliText}
+                  onMount={onCliMount}
+                  onChange={(v) => setCliText(v ?? "")}
+                  options={{
+                    minimap: { enabled: false },
+                    fontSize: 14,
+                    lineNumbers: "on",
+                    scrollBeyondLastLine: false,
+                    wordWrap: "on",
+                  }}
+                />
+              </div>
+            </section>
+          }
+          right={
+            <section className="pane">
+              <div className="pane-header">
+                <span className="pane-label">nac.yaml</span>
+                <span className="pane-hint">Generated preview · read-only · iosxe.devices[]</span>
+              </div>
+              <div className="pane-editor">
+                <Editor
+                  height="100%"
+                  language="yaml"
+                  theme="vs-dark"
+                  value={nacYaml}
+                  onMount={onYamlMount}
+                  options={{
+                    readOnly: true,
+                    minimap: { enabled: false },
+                    fontSize: 14,
+                    lineNumbers: "on",
+                    scrollBeyondLastLine: false,
+                    wordWrap: "on",
+                  }}
+                />
+              </div>
+            </section>
+          }
+        />
       </main>
     </div>
   );
