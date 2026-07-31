@@ -133,31 +133,99 @@ body,
 }
 
 .panes {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
   flex: 1;
   min-height: 0;
+  overflow: hidden;
+}
+
+.split-pane {
+  display: flex;
+  flex-direction: row;
+  height: 100%;
+  min-height: 0;
+  width: 100%;
+}
+
+.split-pane-left,
+.split-pane-right {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.split-divider {
+  flex: 0 0 6px;
+  cursor: col-resize;
+  background: #2d2d2d;
+  border-left: 1px solid #3c3c3c;
+  border-right: 1px solid #3c3c3c;
+  position: relative;
+  z-index: 2;
+  touch-action: none;
+}
+
+.split-divider:hover,
+.split-divider:active {
+  background: #094771;
+}
+
+.split-divider::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 2px;
+  height: 32px;
+  border-radius: 1px;
+  background: #858585;
+}
+
+body.split-dragging {
+  cursor: col-resize;
+  user-select: none;
+}
+
+body.split-dragging * {
+  cursor: col-resize !important;
 }
 
 .pane {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  border-right: 1px solid #3c3c3c;
+  height: 100%;
+  flex: 1;
 }
 
-.pane:last-child {
-  border-right: none;
+.pane-editor {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .pane-header {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
+  gap: 0.5rem;
   padding: 0.4rem 0.75rem;
   background: #2d2d2d;
   border-bottom: 1px solid #3c3c3c;
   flex-shrink: 0;
+  min-width: 0;
+}
+
+.pane-hint {
+  font-size: 0.72rem;
+  color: #858585;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex-shrink: 1;
+  min-width: 0;
 }
 
 .pane-label {
@@ -166,19 +234,9 @@ body,
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: #cccccc;
+  flex-shrink: 0;
 }
 
-.pane-hint {
-  font-size: 0.72rem;
-  color: #858585;
-}
-
-.pane > section,
-.pane > div:last-child {
-  flex: 1;
-  min-height: 0;
-}
-
-.pane .monaco-editor {
-  flex: 1;
+.pane-editor .monaco-editor {
+  height: 100% !important;
 }
