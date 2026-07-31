@@ -53,30 +53,45 @@ GitHub Actions workflow (`.github/workflows/ci.yml`) runs on push/PR:
 
 ## Example — type left, **learn right**
 
-The CLI is how you *enter* config. **nac.yaml is what you're building** — drop this into a real NaC repo.
+Network Lens is a **live IDE preview** — not a bare YAML exporter. The right pane shows what you see in the app: schema contract, safety labels, and structured config filling in as you type.
 
-**Left (CLI input)** — familiar, abbreviated:
+<table>
+<tr>
+<td width="50%" valign="top">
+
+**CLI input** (left pane)
 
 ```
 hostn R1
-ipv6 unicast-routing
 int lo0
 no sh
 ip add 10.0.0.1 255.255.255.255
 ipv6 enable
 ipv6 address 2001:db8::1/64
+ipv6 address 2001:db8:1::1/64
 ```
 
-**Right (nac.yaml)** — the strong side, `iosxe.devices[]`:
+</td>
+<td width="50%" valign="top">
+
+**nac.yaml** (right pane — live preview)
 
 ```yaml
+# Network Lens — Live NaC preview
+# Schema: iosxe-devices-configuration-mvp
+# Schema version: 3.0.0
+# Canonical root: iosxe.devices[]
+# Contract: lean iosxe.devices[].configuration.*
+# Model docs: https://netascode.cisco.com/docs/data_models/iosxe/overview/
+# Module: netascode/nac-iosxe/iosxe 0.1.0
+# Generated · Not applied
+# Apply-safe: only interfaces you typed in CLI — no placeholder resources
 iosxe:
   devices:
   - name: iosv-01
     configuration:
       system:
         hostname: "R1"
-        ipv6_unicast_routing: true
       interfaces:
         loopbacks:
         - id: '0'
@@ -87,11 +102,15 @@ iosxe:
             enable: true
             addresses:
               - prefix: "2001:db8::1/64"
+              - prefix: "2001:db8:1::1/64"
           shutdown: false
 ```
 
-That's the lesson: **`configuration:` is where router config lives.** CLI lines become typed fields under `iosxe.devices[].configuration.*` — ready for `netascode/nac-iosxe` and `nac-validate`.
+</td>
+</tr>
+</table>
 
+The header lines are intentional — they teach **which schema**, **which contract**, and **Generated · Not applied** (preview only, no push to device). When you export to a real NaC repo, strip the preview header; in the IDE, keep it — that's the lesson happening live.
 CLI abbreviations (left pane only): `hostn`, `int`, `no sh`, `ip add`, `lo0`, `g0/0/0`.
 
 ## Architecture
