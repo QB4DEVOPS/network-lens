@@ -156,14 +156,23 @@ body,
 }
 
 .split-divider {
-  flex: 0 0 6px;
+  flex: 0 0 10px;
   cursor: col-resize;
   background: #2d2d2d;
   border-left: 1px solid #3c3c3c;
   border-right: 1px solid #3c3c3c;
   position: relative;
-  z-index: 2;
+  z-index: 10;
   touch-action: none;
+}
+
+.split-divider::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -8px;
+  right: -8px;
 }
 
 .split-divider:hover,
@@ -190,6 +199,10 @@ body.split-dragging {
 
 body.split-dragging * {
   cursor: col-resize !important;
+}
+
+body.split-dragging .pane-editor {
+  pointer-events: none;
 }
 
 .pane {

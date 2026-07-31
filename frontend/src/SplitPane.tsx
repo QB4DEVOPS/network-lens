@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 const STORAGE_KEY = "network-lens-split-ratio";
-/** Soft floor while dragging — panes may shrink further when the window is narrow. */
 const MIN_PANE_PX = 120;
 
 function minPaneRatio(width: number): number {
@@ -36,33 +35,69 @@ export function SplitPane({ left, right, defaultRatio = 0.5 }: SplitPaneProps) {
     return Math.min(maxRatio, Math.max(minRatio, next));
   }, []);
 
-  const onPointerDown = useCallback((e: React.PointerEvent) => {
-    e.preventDefault();
-    dragging.current = true;
-    e.currentTarget.setPointerCapture(e.pointerId);
-    document.body.classList.add("split-dragging");
-  }, []);
-
-  const onPointerMove = useCallback(
-    (e: React.PointerEvent) => {
-      if (!dragging.current || !containerRef.current) return;
+  const applyPointerX = useCallback(
+    (clientX: number) => {
+      if (!containerRef.current) return;
       const rect = containerRef.current.getBoundingClientRect();
-      const next = clampRatio((e.clientX - rect.left) / rect.width, rect.width);
+      const next = clampRatio((clientX - rect.left) / rect.width, rect.width);
       setRatio(next);
     },
     [clampRatio],
   );
 
-  const onPointerUp = useCallback(
-    (e: React.PointerEvent) => {
-      if (!dragging.current) return;
-      dragging.current = false;
-      e.currentTarget.releasePointerCapture(e.pointerId);
-      document.body.classList.remove("split-dragging");
-      localStorage.setItem(STORAGE_KEY, String(ratioRef.current));
+  const stopDragging = useCallback(() => {
+    if (!dragging.current) return;
+    dragging.current = false;
+    document.body.classList.remove("split-dragging");
+    localStorage.setItem(STORAGE_KEY, String(ratioRef.current));
+  }, []);
+
+  const onDividerPointerDown = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      e.preventDefault();
+      dragging.current = true;
+      document.body.classList.add("split-dragging");
+      applyPointerX(e.clientX);
+      e.currentTarget.setPointerCapture(e.pointerId);
     },
-    [],
+    [applyPointerX],
   );
+
+  const onDividerPointerMove = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      if (!dragging.current) return;
+      e.preventDefault();
+      applyPointerX(e.clientX);
+    },
+    [applyPointerX],
+  );
+
+  const onDividerPointerUp = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      if (!dragging.current) return;
+      e.currentTarget.releasePointerCapture(e.pointerId);
+      stopDragging();
+    },
+    [stopDragging],
+  );
+
+  useEffect(() => {
+    const onWindowPointerMove = (e: PointerEvent) => {
+      if (!dragging.current) return;
+      e.preventDefault();
+      applyPointerX(e.clientX);
+    };
+    const onWindowPointerUp = () => stopDragging();
+
+    window.addEventListener("pointermove", onWindowPointerMove);
+    window.addEventListener("pointerup", onWindowPointerUp);
+    window.addEventListener("pointercancel", onWindowPointerUp);
+    return () => {
+      window.removeEventListener("pointermove", onWindowPointerMove);
+      window.removeEventListener("pointerup", onWindowPointerUp);
+      window.removeEventListener("pointercancel", onWindowPointerUp);
+    };
+  }, [applyPointerX, stopDragging]);
 
   useEffect(() => {
     const onResize = () => {
@@ -92,10 +127,11 @@ export function SplitPane({ left, right, defaultRatio = 0.5 }: SplitPaneProps) {
         aria-valuenow={Math.round(ratio * 100)}
         aria-label="Resize CLI and nac.yaml panes"
         title="Drag to resize panes"
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onPointerCancel={onPointerUp}
+        onPointerDown={onDividerPointerDown}
+        onPointerMove={onDividerPointerMove}
+        onPointerUp={onDividerPointerUp}
+        onPointerCancel={onDividerPointerUp}
+        onLostPointerCapture={stopDragging}
       />
       <div
         className="split-pane-right"
