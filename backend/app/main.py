@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from app.generators.nac_yaml import generate_nac_yaml
+from app.generators.terraform import generate_terraform
 from app.models import Device, LineMapping, ParseWarning
 from app.parsers.ios_cli import parse_cli
 from app.sync.mappings import build_line_mappings
@@ -30,6 +31,7 @@ class SyncRequest(BaseModel):
 class SyncResponse(BaseModel):
     canonical: Device
     nac_yaml: str
+    terraform_hcl: str
     warnings: list[ParseWarning] = []
     mappings: list[LineMapping] = []
     context_by_line: dict[int, str | None] = Field(default_factory=dict)
@@ -51,6 +53,7 @@ def sync(request: SyncRequest) -> SyncResponse:
     return SyncResponse(
         canonical=parse_result.device,
         nac_yaml=yaml_result.content,
+        terraform_hcl=generate_terraform(parse_result.device),
         warnings=parse_result.warnings,
         mappings=mappings,
         context_by_line=parse_result.context_by_line,

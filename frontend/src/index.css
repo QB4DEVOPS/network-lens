@@ -241,6 +241,42 @@ body.split-dragging .pane-editor {
   min-width: 0;
 }
 
+.pane-header-left {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.format-toggle {
+  display: inline-flex;
+  border: 1px solid #3c3c3c;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.format-toggle-btn {
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #858585;
+  background: #252526;
+  border: none;
+  padding: 0.25rem 0.55rem;
+  cursor: pointer;
+}
+
+.format-toggle-btn:hover {
+  color: #cccccc;
+  background: #2d2d2d;
+}
+
+.format-toggle-btn.active {
+  color: #4ec9b0;
+  background: #264f3a;
+}
+
 .pane-label {
   font-size: 0.8rem;
   font-weight: 600;
