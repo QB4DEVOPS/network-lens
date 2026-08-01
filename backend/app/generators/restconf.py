@@ -4,7 +4,13 @@ from __future__ import annotations
 
 import json
 
-from app.models import Device, Interface
+from app.models import Device, Interface, Ipv6Address
+
+
+def _ipv6_ip(addr: Ipv6Address) -> str:
+    if addr.prefix_length is not None and "/" not in addr.prefix:
+        return f"{addr.prefix}/{addr.prefix_length}"
+    return addr.prefix
 
 
 def _iface_json(iface: Interface) -> dict[str, object]:
@@ -40,7 +46,7 @@ def _iface_json(iface: Interface) -> dict[str, object]:
         }
 
     if iface.has_ipv6:
-        v6_addrs = [{"ip": a.prefix, "config": {"ip": a.prefix}} for a in iface.ipv6_addresses]
+        v6_addrs = [{"ip": _ipv6_ip(a), "config": {"ip": _ipv6_ip(a)}} for a in iface.ipv6_addresses]
         if v6_addrs:
             if "subinterfaces" not in entry:
                 entry["subinterfaces"] = {"subinterface": [{"index": 0, "config": {"index": 0}}]}
@@ -53,6 +59,11 @@ def _iface_json(iface: Interface) -> dict[str, object]:
 def generate_restconf_json(device: Device) -> str:
     hostname = device.system.hostname or device.name
     payload = {
+        "_network_lens_preview": {
+            "generated": "Not applied",
+            "dialect": "RESTCONF JSON (OpenConfig interfaces + IOS-XE native subset)",
+            "nac_path": "iosxe.devices[].configuration → ietf-interfaces + Cisco-IOS-XE-native",
+        },
         "ietf-interfaces:interfaces": {
             "interface": [_iface_json(i) for i in device.interfaces]
         },

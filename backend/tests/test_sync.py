@@ -348,8 +348,8 @@ ipv6 address FE80::1 link-local"""
     assert '"FE80::1"' in yaml_out
 
 
-def test_generate_terraform_hostname_and_loopback():
-    from app.generators.terraform import generate_terraform
+def test_generate_restconf_json_loopback():
+    from app.generators.restconf import generate_restconf_json
 
     cli = """hostn R1
 int lo0
@@ -359,18 +359,16 @@ ipv6 enable
 ipv6 address 2001:db8::1/64
 ipv6 address 2001:db8:1::1/64"""
     device = parse_cli(cli).device
-    hcl = generate_terraform(device)
-    assert 'resource "iosxe_system" "r1"' in hcl
-    assert 'hostname = "R1"' in hcl
-    assert 'resource "iosxe_interface_loopback" "lo0"' in hcl
-    assert 'ipv4_address      = "10.0.0.1"' in hcl
-    assert "ipv6_enable       = true" in hcl
-    assert '"2001:db8::1/64"' in hcl
-    assert '"2001:db8:1::1/64"' in hcl
-    assert "NaC path → TF resource" in hcl
+    payload = generate_restconf_json(device)
+    assert "ietf-interfaces:interfaces" in payload
+    assert '"hostname": "R1"' in payload
+    assert "Loopback0" in payload
+    assert "2001:db8::1/64" in payload
+    assert "2001:db8:1::1/64" in payload
+    assert "_network_lens_preview" in payload
 
 
-def test_sync_includes_terraform_hcl():
+def test_sync_includes_restconf_json():
     from app.main import SyncRequest, sync
 
     resp = sync(
@@ -378,6 +376,5 @@ def test_sync_includes_terraform_hcl():
             cli_text="hostn R1\nint lo0\nno sh\nip add 10.0.0.1 255.255.255.255",
         ),
     )
-    assert "iosxe_system" in resp.terraform_hcl
-    assert "iosxe_interface_loopback" in resp.terraform_hcl
-    assert "terraform_hcl_preview" in resp.features
+    assert "ietf-interfaces:interfaces" in resp.restconf_json
+    assert "restconf_json_preview" in resp.features

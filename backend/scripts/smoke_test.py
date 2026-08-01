@@ -56,6 +56,7 @@ def run_in_process_checks() -> None:
     assert "ipv6_unicast_routing: true" in resp.nac_yaml
     assert resp.context_by_line, "context_by_line missing from sync response"
     assert "iosxe_system" in resp.terraform_hcl, "terraform_hcl missing from sync response"
+    assert "ietf-interfaces:interfaces" in resp.restconf_json, "restconf_json missing from sync response"
 
 
 def _http_json(url: str, method: str = "GET", body: dict | None = None) -> dict:
@@ -73,14 +74,14 @@ def run_live_checks(base_url: str) -> None:
     base = base_url.rstrip("/")
     health = _http_json(f"{base}/health")
     assert health.get("status") == "ok", health
-    for feature in ("ipv6_unicast_routing", "cli_context_by_line"):
+    for feature in ("ipv6_unicast_routing", "cli_context_by_line", "restconf_json_preview"):
         assert feature in health.get("features", []), f"/health missing feature {feature}"
 
     sync_body = _http_json(f"{base}/sync", method="POST", body={"cli_text": FULL_STACK_CLI})
     assert sync_body.get("canonical", {}).get("system", {}).get("ipv6_unicast_routing") is True
     assert "ipv6_unicast_routing: true" in sync_body.get("nac_yaml", "")
     assert sync_body.get("context_by_line"), "live /sync missing context_by_line"
-    assert "iosxe_system" in sync_body.get("terraform_hcl", ""), "live /sync missing terraform_hcl"
+    assert "ietf-interfaces:interfaces" in sync_body.get("restconf_json", ""), "live /sync missing restconf_json"
     assert health.get("build_id") == sync_body.get("build_id"), "health vs sync build_id mismatch"
 
 
