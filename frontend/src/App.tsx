@@ -34,6 +34,25 @@ iosxe:
         # ← type: int lo0, int g0/0/0, int tun10, int vlan888
 `;
 
+const INITIAL_HCL = `# Network Lens — Terraform preview
+# Generated · Not applied
+# Provider: CiscoDevNet/iosxe (scaffold only)
+# NaC path → TF resource:
+#   iosxe.devices[].configuration.system.*     → iosxe_system
+#   iosxe.devices[].configuration.interfaces.loopbacks[] → iosxe_interface_loopback
+
+resource "iosxe_system" "r1" {
+  hostname = null # ← type: hostn R1
+}
+
+resource "iosxe_interface_loopback" "lo0" {
+  name              = 0
+  shutdown          = true
+  ipv4_address      = null # ← type: interface lo0, no shutdown, ip address ...
+  ipv4_address_mask = null
+}
+`;
+
 interface ParseWarning {
   line: number;
   message: string;
@@ -93,9 +112,13 @@ function contextAtLine(
   return null;
 }
 
+type OutputFormat = "nac" | "hcl";
+
 export default function App() {
   const [cliText, setCliText] = useState(DEFAULT_CLI);
   const [nacYaml, setNacYaml] = useState(INITIAL_NAC);
+  const [terraformHcl, setTerraformHcl] = useState(INITIAL_HCL);
+  const [outputFormat, setOutputFormat] = useState<OutputFormat>("nac");
   const [warnings, setWarnings] = useState<ParseWarning[]>([]);
   const [, setMappings] = useState<LineMapping[]>([]);
   const [linkLabel, setLinkLabel] = useState<string | null>(null);
@@ -106,9 +129,9 @@ export default function App() {
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cliEditorRef = useRef<MonacoEditor.IStandaloneCodeEditor | null>(null);
-  const yamlEditorRef = useRef<MonacoEditor.IStandaloneCodeEditor | null>(null);
+  const programmaticEditorRef = useRef<MonacoEditor.IStandaloneCodeEditor | null>(null);
   const cliDecoRef = useRef<string[]>([]);
-  const yamlDecoRef = useRef<string[]>([]);
+  const programmaticDecoRef = useRef<string[]>([]);
   const mappingsRef = useRef<LineMapping[]>([]);
   const contextByLineRef = useRef<Record<string, string | null>>({});
 
@@ -116,8 +139,11 @@ export default function App() {
     if (cliEditorRef.current) {
       cliDecoRef.current = cliEditorRef.current.deltaDecorations(cliDecoRef.current, []);
     }
-    if (yamlEditorRef.current) {
-      yamlDecoRef.current = yamlEditorRef.current.deltaDecorations(yamlDecoRef.current, []);
+    if (programmaticEditorRef.current) {
+      programmaticDecoRef.current = programmaticEditorRef.current.deltaDecorations(
+        programmaticDecoRef.current,
+        [],
+      );
     }
     setLinkLabel(null);
   }, []);
@@ -144,25 +170,28 @@ export default function App() {
       cliEditorRef.current.revealLineInCenterIfOutsideViewport(mapping.cli_line);
     }
 
-    if (yamlEditorRef.current) {
-      yamlDecoRef.current = yamlEditorRef.current.deltaDecorations(yamlDecoRef.current, [
-        {
-          range: {
-            startLineNumber: mapping.yaml_start_line,
-            startColumn: 1,
-            endLineNumber: mapping.yaml_end_line,
-            endColumn: 1,
+    if (outputFormat === "nac" && programmaticEditorRef.current) {
+      programmaticDecoRef.current = programmaticEditorRef.current.deltaDecorations(
+        programmaticDecoRef.current,
+        [
+          {
+            range: {
+              startLineNumber: mapping.yaml_start_line,
+              startColumn: 1,
+              endLineNumber: mapping.yaml_end_line,
+              endColumn: 1,
+            },
+            options: {
+              isWholeLine: true,
+              className: "line-highlight-linked",
+              marginClassName: "line-highlight-margin",
+            },
           },
-          options: {
-            isWholeLine: true,
-            className: "line-highlight-linked",
-            marginClassName: "line-highlight-margin",
-          },
-        },
-      ]);
-      yamlEditorRef.current.revealLineInCenterIfOutsideViewport(mapping.yaml_start_line);
+        ],
+      );
+      programmaticEditorRef.current.revealLineInCenterIfOutsideViewport(mapping.yaml_start_line);
     }
-  }, []);
+  }, [outputFormat]);
 
   const updateCliContext = useCallback((lineNumber: number) => {
     setCliContext(contextAtLine(contextByLineRef.current, lineNumber));
@@ -171,6 +200,10 @@ export default function App() {
   const highlightFromCli = useCallback(
     (lineNumber: number) => {
       updateCliContext(lineNumber);
+      if (outputFormat !== "nac") {
+        clearHighlights();
+        return;
+      }
       const mapping = pickCliMapping(mappingsRef.current, lineNumber);
       if (!mapping) {
         clearHighlights();
@@ -178,11 +211,15 @@ export default function App() {
       }
       applyMapping(mapping);
     },
-    [applyMapping, clearHighlights, updateCliContext],
+    [applyMapping, clearHighlights, outputFormat, updateCliContext],
   );
 
-  const highlightFromYaml = useCallback(
+  const highlightFromProgrammatic = useCallback(
     (lineNumber: number) => {
+      if (outputFormat !== "nac") {
+        clearHighlights();
+        return;
+      }
       const mapping = pickYamlMapping(mappingsRef.current, lineNumber);
       if (!mapping) {
         clearHighlights();
@@ -190,7 +227,7 @@ export default function App() {
       }
       applyMapping(mapping);
     },
-    [applyMapping, clearHighlights],
+    [applyMapping, clearHighlights, outputFormat],
   );
 
   const onCliMount: OnMount = (editor) => {
@@ -198,10 +235,20 @@ export default function App() {
     editor.onDidChangeCursorPosition((e) => highlightFromCli(e.position.lineNumber));
   };
 
-  const onYamlMount: OnMount = (editor) => {
-    yamlEditorRef.current = editor;
-    editor.onDidChangeCursorPosition((e) => highlightFromYaml(e.position.lineNumber));
+  const onProgrammaticMount: OnMount = (editor) => {
+    programmaticEditorRef.current = editor;
+    editor.onDidChangeCursorPosition((e) => highlightFromProgrammatic(e.position.lineNumber));
   };
+
+  const switchOutputFormat = useCallback(
+    (format: OutputFormat) => {
+      setOutputFormat(format);
+      if (format === "hcl") {
+        clearHighlights();
+      }
+    },
+    [clearHighlights],
+  );
 
   const sync = useCallback(
     async (text: string) => {
@@ -229,6 +276,7 @@ export default function App() {
         }
 
         setNacYaml(data.nac_yaml);
+        setTerraformHcl(data.terraform_hcl ?? INITIAL_HCL);
         setWarnings(data.warnings ?? []);
         const nextMappings: LineMapping[] = data.mappings ?? [];
         setMappings(nextMappings);
@@ -236,7 +284,7 @@ export default function App() {
         contextByLineRef.current = data.context_by_line ?? {};
 
         const cliLine = cliEditorRef.current?.getPosition()?.lineNumber;
-        if (cliLine) {
+        if (cliLine && outputFormat === "nac") {
           updateCliContext(cliLine);
           const mapping = pickCliMapping(nextMappings, cliLine);
           if (mapping) applyMapping(mapping);
@@ -250,7 +298,7 @@ export default function App() {
         setStatus("error");
       }
     },
-    [applyMapping, clearHighlights, updateCliContext],
+    [applyMapping, clearHighlights, outputFormat, updateCliContext],
   );
 
   useEffect(() => {
@@ -296,7 +344,9 @@ export default function App() {
           {backendInfo?.build_id && !backendIssue && (
             <span className="badge muted">API {backendInfo.api_version} · {backendInfo.build_id}</span>
           )}
-          {linkLabel && <span className="badge link">↔ {linkLabel}</span>}
+          {linkLabel && outputFormat === "nac" && (
+            <span className="badge link">↔ {linkLabel}</span>
+          )}
           {status === "syncing" && <span className="badge muted">Syncing…</span>}
           {backendIssue && <span className="badge error">{backendIssue}</span>}
           {!backendIssue && status === "error" && (
@@ -323,7 +373,11 @@ export default function App() {
             <section className="pane">
               <div className="pane-header">
                 <span className="pane-label">CLI input</span>
-                <span className="pane-hint">Click a line ↔ highlights nac.yaml</span>
+                <span className="pane-hint">
+                  {outputFormat === "nac"
+                    ? "Click a line ↔ highlights nac.yaml"
+                    : "Same model as nac.yaml — TF module shape"}
+                </span>
               </div>
               <div className="pane-editor">
                 <Editor
@@ -347,16 +401,41 @@ export default function App() {
           right={
             <section className="pane">
               <div className="pane-header">
-                <span className="pane-label">nac.yaml</span>
-                <span className="pane-hint">Generated preview · read-only · iosxe.devices[]</span>
+                <div className="pane-header-left">
+                  <div className="format-toggle" role="tablist" aria-label="Programmatic output format">
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={outputFormat === "nac"}
+                      className={`format-toggle-btn${outputFormat === "nac" ? " active" : ""}`}
+                      onClick={() => switchOutputFormat("nac")}
+                    >
+                      nac.yaml
+                    </button>
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={outputFormat === "hcl"}
+                      className={`format-toggle-btn${outputFormat === "hcl" ? " active" : ""}`}
+                      onClick={() => switchOutputFormat("hcl")}
+                    >
+                      HCL
+                    </button>
+                  </div>
+                </div>
+                <span className="pane-hint">
+                  {outputFormat === "nac"
+                    ? "Generated preview · iosxe.devices[]"
+                    : "NaC → iosxe_system + iosxe_interface_loopback"}
+                </span>
               </div>
               <div className="pane-editor">
                 <Editor
                   height="100%"
-                  language="yaml"
+                  language={outputFormat === "nac" ? "yaml" : "hcl"}
                   theme="vs-dark"
-                  value={nacYaml}
-                  onMount={onYamlMount}
+                  value={outputFormat === "nac" ? nacYaml : terraformHcl}
+                  onMount={onProgrammaticMount}
                   options={{
                     readOnly: true,
                     minimap: { enabled: false },
