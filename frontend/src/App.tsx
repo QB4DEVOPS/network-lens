@@ -53,6 +53,21 @@ resource "iosxe_interface_loopback" "lo0" {
 }
 `;
 
+const INITIAL_JSON = `{
+  "_network_lens_preview": {
+    "generated": "Not applied",
+    "dialect": "RESTCONF JSON (OpenConfig interfaces + IOS-XE native subset)",
+    "nac_path": "iosxe.devices[].configuration → ietf-interfaces + Cisco-IOS-XE-native"
+  },
+  "ietf-interfaces:interfaces": {
+    "interface": []
+  },
+  "Cisco-IOS-XE-native:native": {
+    "hostname": null
+  }
+}
+`;
+
 interface ParseWarning {
   line: number;
   message: string;
@@ -112,12 +127,25 @@ function contextAtLine(
   return null;
 }
 
-type OutputFormat = "nac" | "hcl";
+type OutputFormat = "nac" | "json" | "hcl";
+
+function programmaticLanguage(format: OutputFormat): string {
+  if (format === "nac") return "yaml";
+  if (format === "hcl") return "hcl";
+  return "json";
+}
+
+function programmaticHint(format: OutputFormat): string {
+  if (format === "nac") return "Generated preview · iosxe.devices[]";
+  if (format === "hcl") return "NaC → iosxe_system + iosxe_interface_loopback";
+  return "NaC → ietf-interfaces + Cisco-IOS-XE-native JSON";
+}
 
 export default function App() {
   const [cliText, setCliText] = useState(DEFAULT_CLI);
   const [nacYaml, setNacYaml] = useState(INITIAL_NAC);
   const [terraformHcl, setTerraformHcl] = useState(INITIAL_HCL);
+  const [restconfJson, setRestconfJson] = useState(INITIAL_JSON);
   const [outputFormat, setOutputFormat] = useState<OutputFormat>("nac");
   const [warnings, setWarnings] = useState<ParseWarning[]>([]);
   const [, setMappings] = useState<LineMapping[]>([]);
@@ -243,12 +271,15 @@ export default function App() {
   const switchOutputFormat = useCallback(
     (format: OutputFormat) => {
       setOutputFormat(format);
-      if (format === "hcl") {
+      if (format !== "nac") {
         clearHighlights();
       }
     },
     [clearHighlights],
   );
+
+  const programmaticValue =
+    outputFormat === "nac" ? nacYaml : outputFormat === "hcl" ? terraformHcl : restconfJson;
 
   const sync = useCallback(
     async (text: string) => {
@@ -277,6 +308,7 @@ export default function App() {
 
         setNacYaml(data.nac_yaml);
         setTerraformHcl(data.terraform_hcl ?? INITIAL_HCL);
+        setRestconfJson(data.restconf_json ?? INITIAL_JSON);
         setWarnings(data.warnings ?? []);
         const nextMappings: LineMapping[] = data.mappings ?? [];
         setMappings(nextMappings);
@@ -376,7 +408,7 @@ export default function App() {
                 <span className="pane-hint">
                   {outputFormat === "nac"
                     ? "Click a line ↔ highlights nac.yaml"
-                    : "Same model as nac.yaml — TF module shape"}
+                    : "Same canonical model · switch tabs to compare dialects"}
                 </span>
               </div>
               <div className="pane-editor">
@@ -415,6 +447,15 @@ export default function App() {
                     <button
                       type="button"
                       role="tab"
+                      aria-selected={outputFormat === "json"}
+                      className={`format-toggle-btn${outputFormat === "json" ? " active" : ""}`}
+                      onClick={() => switchOutputFormat("json")}
+                    >
+                      JSON
+                    </button>
+                    <button
+                      type="button"
+                      role="tab"
                       aria-selected={outputFormat === "hcl"}
                       className={`format-toggle-btn${outputFormat === "hcl" ? " active" : ""}`}
                       onClick={() => switchOutputFormat("hcl")}
@@ -423,18 +464,14 @@ export default function App() {
                     </button>
                   </div>
                 </div>
-                <span className="pane-hint">
-                  {outputFormat === "nac"
-                    ? "Generated preview · iosxe.devices[]"
-                    : "NaC → iosxe_system + iosxe_interface_loopback"}
-                </span>
+                <span className="pane-hint">{programmaticHint(outputFormat)}</span>
               </div>
               <div className="pane-editor">
                 <Editor
                   height="100%"
-                  language={outputFormat === "nac" ? "yaml" : "hcl"}
+                  language={programmaticLanguage(outputFormat)}
                   theme="vs-dark"
-                  value={outputFormat === "nac" ? nacYaml : terraformHcl}
+                  value={programmaticValue}
                   onMount={onProgrammaticMount}
                   options={{
                     readOnly: true,

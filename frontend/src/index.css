@@ -156,13 +156,13 @@ body,
 }
 
 .split-divider {
-  flex: 0 0 10px;
+  flex: 0 0 12px;
   cursor: col-resize;
-  background: #2d2d2d;
-  border-left: 1px solid #3c3c3c;
-  border-right: 1px solid #3c3c3c;
+  background: #3c3c3c;
+  border-left: 1px solid #555;
+  border-right: 1px solid #555;
   position: relative;
-  z-index: 10;
+  z-index: 100;
   touch-action: none;
 }
 
@@ -171,12 +171,13 @@ body,
   position: absolute;
   top: 0;
   bottom: 0;
-  left: -8px;
-  right: -8px;
+  left: -10px;
+  right: -10px;
 }
 
 .split-divider:hover,
-.split-divider:active {
+.split-divider:active,
+body.split-dragging .split-divider {
   background: #094771;
 }
 
@@ -186,10 +187,11 @@ body,
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  width: 2px;
-  height: 32px;
-  border-radius: 1px;
+  width: 4px;
+  height: 48px;
+  border-radius: 2px;
   background: #858585;
+  box-shadow: -6px 0 0 #858585, 6px 0 0 #858585;
 }
 
 body.split-dragging {

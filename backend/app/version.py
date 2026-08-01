@@ -7,7 +7,7 @@ from pathlib import Path
 
 APP_DIR = Path(__file__).resolve().parent
 
-API_VERSION = "0.3.0"
+API_VERSION = "0.3.1"
 
 # Bump API_VERSION when response shape or behavior changes materially.
 FEATURES: list[str] = [
@@ -18,6 +18,7 @@ FEATURES: list[str] = [
     "cli_context_by_line",
     "global_command_exits_interface",
     "terraform_hcl_preview",
+    "restconf_json_preview",
 ]
 
 _BUILD_SOURCES = (
@@ -27,6 +28,7 @@ _BUILD_SOURCES = (
     "parsers/ios_cli.py",
     "generators/nac_yaml.py",
     "generators/terraform.py",
+    "generators/restconf.py",
 )
 
 

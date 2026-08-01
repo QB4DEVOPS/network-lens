@@ -3,6 +3,7 @@ export const REQUIRED_FEATURES = [
   "ipv6_unicast_routing",
   "cli_context_by_line",
   "terraform_hcl_preview",
+  "restconf_json_preview",
 ] as const;
 
 export interface BackendManifest {
@@ -15,6 +16,7 @@ export interface BackendManifest {
 export interface SyncPayload extends BackendManifest {
   nac_yaml: string;
   terraform_hcl?: string;
+  restconf_json?: string;
   warnings?: unknown[];
   mappings?: unknown[];
   context_by_line?: Record<string, string | null>;
@@ -58,6 +60,10 @@ export function validateSync(cliText: string, data: SyncPayload): string | null 
 
   if (cliText.trim() && !data.terraform_hcl?.includes("iosxe_system")) {
     return "Backend missing terraform_hcl — restart with backend\\run.bat";
+  }
+
+  if (cliText.trim() && !data.restconf_json?.includes("ietf-interfaces:interfaces")) {
+    return "Backend missing restconf_json — restart with backend\\run.bat";
   }
 
   return null;
