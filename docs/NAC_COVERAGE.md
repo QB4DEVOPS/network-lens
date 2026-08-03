@@ -49,7 +49,7 @@ Legend: **Wired** = CLI parser + live yaml emitter | **Scaffold** = model + hint
 | `mpls` | NDO-184 | Scaffold | |
 | `bfd`, `cdp`, `lldp`, `spanning_tree`, `udld`, `vtp` | — | Scaffold | |
 | `pim`, `msdp`, `multicast` | — | Scaffold | |
-| `crypto`, `flow`, `license`, `service*` | — | Scaffold | |
+| `crypto`, `flow`, `license`, `service*` | NDO-185 | Partial | IKEv2, IPsec, PKI trustpoints wired; GDOI/GET VPN not in NaC |
 | EIGRP | — | **Skipped** | not in Network Lens scope |
 
 Epic: [NDO-170](https://roberthosford.atlassian.net/browse/NDO-170)

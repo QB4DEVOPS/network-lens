@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 
+from app.parsers.crypto_cli import CryptoParseState, parse_crypto_line
 from app.models import (
     AaaAccountingConfig,
     AaaAccountingExec,
@@ -726,6 +727,49 @@ def _ensure_snmp(device: Device) -> SnmpServerConfig:
     return device.configuration.snmp_server
 
 
+def _parse_ntp_server_options(parts: list[str]) -> tuple[bool, str | None]:
+    """Parse tokens after ``ntp server <ip>`` (prefer, vrf, etc.)."""
+    prefer = False
+    vrf: str | None = None
+    idx = 3
+    while idx < len(parts):
+        token = parts[idx].lower()
+        if token == "prefer":
+            prefer = True
+            idx += 1
+        elif token == "vrf" and idx + 1 < len(parts):
+            vrf = parts[idx + 1]
+            idx += 2
+        else:
+            idx += 1
+    return prefer, vrf
+
+
+def _append_ntp_endpoint(
+    device: Device,
+    cli_refs: list[CliFieldRef],
+    *,
+    line_num: int,
+    kind: str,
+    parts: list[str],
+) -> None:
+    if len(parts) < 3:
+        return
+    prefer, vrf = _parse_ntp_server_options(parts)
+    ntp = _ensure_ntp(device)
+    entry = NtpServer(ip=parts[2], prefer=prefer or None, vrf=vrf)
+    bucket = "peers" if kind == "peer" else "servers"
+    if kind == "peer":
+        ntp.peers.append(entry)
+    else:
+        ntp.servers.append(entry)
+    field_key = f"ntp.{bucket}:{parts[2]}"
+    label = f"ntp {kind} {parts[2]}"
+    if vrf:
+        label += f" vrf {vrf}"
+    cli_refs.append(CliFieldRef(cli_line=line_num, field_key=field_key, label=label))
+
+
 def _ensure_ntp(device: Device) -> NtpConfig:
     if device.configuration.ntp is None:
         device.configuration.ntp = NtpConfig()
@@ -813,6 +857,7 @@ def parse_cli(cli_text: str) -> ParseResult:
     current_ospf_id: str | int | None = None
     current_isis_tag: str | None = None
     current_dhcp_pool: DhcpPool | None = None
+    crypto_state = CryptoParseState()
 
     def iface_key(name: str, suffix: str | None = None) -> str:
         if suffix:
@@ -856,12 +901,16 @@ def parse_cli(cli_text: str) -> ParseResult:
         nonlocal current_dhcp_pool
         current_dhcp_pool = None
 
+    def leave_crypto() -> None:
+        crypto_state.clear_nested()
+
     def leave_nested() -> None:
         leave_vrf()
         leave_acl()
         leave_route_map()
         leave_router()
         leave_dhcp_pool()
+        leave_crypto()
 
     for line_num, raw_line in enumerate(cli_text.splitlines(), start=1):
         line = expand_abbreviations(raw_line)
@@ -869,6 +918,13 @@ def parse_cli(cli_text: str) -> ParseResult:
             continue
 
         lower = line.lower()
+
+        if parse_crypto_line(
+            line, line_num=line_num, device=device, cli_refs=cli_refs, state=crypto_state
+        ):
+            leave_interface()
+            context_by_line[line_num] = crypto_state.active_context
+            continue
 
         if pending_banner is not None:
             kind, delim, start_line = pending_banner
@@ -1261,7 +1317,9 @@ def parse_cli(cli_text: str) -> ParseResult:
                 if aaa.authentication is None:
                     aaa.authentication = AaaAuthenticationConfig()
                 aaa.authentication.logins.append(AaaAuthLogin(name=parts[3], methods=parts[4:]))
-                cli_refs.append(CliFieldRef(cli_line=line_num, field_key="aaa.authentication", label="aaa authentication login"))
+                cli_refs.append(
+                    CliFieldRef(cli_line=line_num, field_key=f"aaa.authentication.logins:{parts[3]}", label="aaa authentication login")
+                )
             leave_nested()
         elif lower.startswith("aaa authorization exec "):
             parts = line.split()
@@ -1270,7 +1328,9 @@ def parse_cli(cli_text: str) -> ParseResult:
                 if aaa.authorization is None:
                     aaa.authorization = AaaAuthorizationConfig()
                 aaa.authorization.execs.append(AaaAuthzExec(name=parts[3], methods=parts[4:]))
-                cli_refs.append(CliFieldRef(cli_line=line_num, field_key="aaa.authorization", label="aaa authorization exec"))
+                cli_refs.append(
+                    CliFieldRef(cli_line=line_num, field_key=f"aaa.authorization.execs:{parts[3]}", label="aaa authorization exec")
+                )
             leave_nested()
         elif lower.startswith("aaa accounting "):
             parts = line.split()
@@ -1282,7 +1342,9 @@ def parse_cli(cli_text: str) -> ParseResult:
                 aaa.accounting.execs.append(
                     AaaAccountingExec(name=parts[3], action_type=action_type, start_stop_groups=groups)
                 )
-                cli_refs.append(CliFieldRef(cli_line=line_num, field_key="aaa.accounting", label="aaa accounting"))
+                cli_refs.append(
+                    CliFieldRef(cli_line=line_num, field_key=f"aaa.accounting.execs:{parts[3]}", label="aaa accounting")
+                )
             leave_nested()
         elif lower.startswith("snmp-server community "):
             parts = line.split()
@@ -1297,12 +1359,10 @@ def parse_cli(cli_text: str) -> ParseResult:
             _ensure_snmp(device).contact = line.split(None, 2)[2].strip()
             cli_refs.append(CliFieldRef(cli_line=line_num, field_key="snmp_server.contact", label="snmp-server contact"))
             leave_nested()
-        elif lower.startswith("ntp server "):
+        elif lower.startswith("ntp server ") or lower.startswith("ntp peer "):
             parts = line.split()
-            if len(parts) >= 3:
-                ntp = _ensure_ntp(device)
-                ntp.servers.append(NtpServer(ip=parts[2], prefer="prefer" in [p.lower() for p in parts[3:]]))
-                cli_refs.append(CliFieldRef(cli_line=line_num, field_key="ntp.servers", label="ntp server"))
+            kind = "peer" if lower.startswith("ntp peer ") else "server"
+            _append_ntp_endpoint(device, cli_refs, line_num=line_num, kind=kind, parts=parts)
             leave_nested()
         elif lower == "service dhcp":
             _ensure_dhcp(device).enabled = True

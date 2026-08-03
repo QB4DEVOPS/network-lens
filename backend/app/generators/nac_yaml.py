@@ -4,7 +4,14 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from app.models import Device, DeviceConfiguration, Interface, NacYamlResult
+from app.models import (
+    CryptoIkev2KeyringPeer,
+    CryptoIkev2Profile,
+    Device,
+    DeviceConfiguration,
+    Interface,
+    NacYamlResult,
+)
 from app.nac_sections import NAC_CONFIGURATION_SECTIONS, ROUTING_SUBSECTION_HINTS
 
 SCHEMA_NAME = "iosxe-devices-configuration-full"
@@ -28,9 +35,14 @@ SCAFFOLD_HEADER = f"""# Network Lens — Live NaC preview
 
 
 class _YamlBuilder:
-    def __init__(self, header: str) -> None:
+    def __init__(self, header: str, *, show_hints: bool = False) -> None:
+        self.show_hints = show_hints
         self.lines: list[str] = [line for line in header.rstrip().splitlines()]
         self.ranges: dict[str, tuple[int, int]] = {}
+
+    def hint_line(self, line: str) -> None:
+        if self.show_hints:
+            self.append(line)
 
     def append(self, line: str) -> int:
         self.lines.append(line)
@@ -64,6 +76,56 @@ def _iface_key(name: str, suffix: str | None = None) -> str:
     if suffix:
         return f"interface:{name}:{suffix}"
     return f"interface:{name}"
+
+
+def _crypto_proposal_key(name: str, field: str | None = None) -> str:
+    base = f"crypto.ikev2.proposals:{name}"
+    return f"{base}:{field}" if field else base
+
+
+def _crypto_policy_key(name: str, field: str | None = None) -> str:
+    base = f"crypto.ikev2.policies:{name}"
+    return f"{base}:{field}" if field else base
+
+
+def _crypto_keyring_key(name: str, field: str | None = None) -> str:
+    base = f"crypto.ikev2.keyrings:{name}"
+    return f"{base}:{field}" if field else base
+
+
+def _crypto_profile_key(name: str, field: str | None = None) -> str:
+    base = f"crypto.ikev2.profiles:{name}"
+    return f"{base}:{field}" if field else base
+
+
+def _crypto_transform_set_key(name: str, field: str | None = None) -> str:
+    base = f"crypto.ipsec_transform_sets:{name}"
+    return f"{base}:{field}" if field else base
+
+
+def _crypto_ipsec_profile_key(name: str, field: str | None = None) -> str:
+    base = f"crypto.ipsec_profiles:{name}"
+    return f"{base}:{field}" if field else base
+
+
+def _crypto_trustpoint_key(tp_id: str, field: str | None = None) -> str:
+    base = f"crypto.pki.trustpoints:{tp_id}"
+    return f"{base}:{field}" if field else base
+
+
+def _aaa_login_key(name: str, field: str | None = None) -> str:
+    base = f"aaa.authentication.logins:{name}"
+    return f"{base}:{field}" if field else base
+
+
+def _aaa_authz_key(name: str, field: str | None = None) -> str:
+    base = f"aaa.authorization.execs:{name}"
+    return f"{base}:{field}" if field else base
+
+
+def _aaa_acct_key(name: str, field: str | None = None) -> str:
+    base = f"aaa.accounting.execs:{name}"
+    return f"{base}:{field}" if field else base
 
 
 def _format_ipv6_block(iface: Interface, indent: str) -> tuple[list[str], tuple[int, int] | None]:
@@ -102,7 +164,11 @@ def _format_ipv6_block(iface: Interface, indent: str) -> tuple[list[str], tuple[
 
 
 def _format_id_interface(
-    iface: Interface, id_value: str, indent_entry: str = "        "
+    iface: Interface,
+    id_value: str,
+    indent_entry: str = "        ",
+    *,
+    show_hints: bool = False,
 ) -> tuple[list[str], dict[str, tuple[int, int]]]:
     lines: list[str] = []
     rel: dict[str, tuple[int, int]] = {}
@@ -116,19 +182,20 @@ def _format_id_interface(
         lines.append(f"{indent_entry}  description: {_yaml_str(iface.description)}")
         rel[f"{base}:description"] = (desc_line, desc_line)
 
-    ipv4_start = len(lines) + 1
-    lines.append(f"{indent_entry}  ipv4:")
-    if iface.ipv4_dhcp:
-        lines.append(f"{indent_entry}    address: dhcp")
-        lines.append(f"{indent_entry}    address_mask: null")
-    elif iface.ipv4_address:
-        lines.append(f"{indent_entry}    address: {_yaml_str(iface.ipv4_address)}")
-        mask = iface.ipv4_address_mask or "255.255.255.255"
-        lines.append(f"{indent_entry}    address_mask: {_yaml_str(mask)}")
-    else:
-        lines.append(f"{indent_entry}    address: {_yaml_null_hint('type: ip address ...')}")
-        lines.append(f"{indent_entry}    address_mask: null")
-    rel[f"{base}:ipv4"] = (ipv4_start, len(lines))
+    if iface.ipv4_dhcp or iface.ipv4_address or show_hints:
+        ipv4_start = len(lines) + 1
+        lines.append(f"{indent_entry}  ipv4:")
+        if iface.ipv4_dhcp:
+            lines.append(f"{indent_entry}    address: dhcp")
+            lines.append(f"{indent_entry}    address_mask: null")
+        elif iface.ipv4_address:
+            lines.append(f"{indent_entry}    address: {_yaml_str(iface.ipv4_address)}")
+            mask = iface.ipv4_address_mask or "255.255.255.255"
+            lines.append(f"{indent_entry}    address_mask: {_yaml_str(mask)}")
+        else:
+            lines.append(f"{indent_entry}    address: {_yaml_null_hint('type: ip address ...')}")
+            lines.append(f"{indent_entry}    address_mask: null")
+        rel[f"{base}:ipv4"] = (ipv4_start, len(lines))
 
     ipv6_lines, _ = _format_ipv6_block(iface, f"{indent_entry}  ")
     if ipv6_lines:
@@ -145,17 +212,23 @@ def _format_id_interface(
     return lines, rel
 
 
-def _format_port_channel(iface: Interface) -> tuple[list[str], dict[str, tuple[int, int]]]:
-    return _format_id_interface(iface, iface.port_channel_id or "0")
+def _format_port_channel(
+    iface: Interface, *, show_hints: bool = False
+) -> tuple[list[str], dict[str, tuple[int, int]]]:
+    return _format_id_interface(iface, iface.port_channel_id or "0", show_hints=show_hints)
 
 
-def _format_port_channel_subinterface(iface: Interface) -> tuple[list[str], dict[str, tuple[int, int]]]:
+def _format_port_channel_subinterface(
+    iface: Interface, *, show_hints: bool = False
+) -> tuple[list[str], dict[str, tuple[int, int]]]:
     pc_id = iface.port_channel_id or "0"
     sub_id = iface.subinterface_id or "0"
-    return _format_id_interface(iface, f"{pc_id}.{sub_id}")
+    return _format_id_interface(iface, f"{pc_id}.{sub_id}", show_hints=show_hints)
 
 
-def _format_ethernet_subinterface(iface: Interface) -> tuple[list[str], dict[str, tuple[int, int]]]:
+def _format_ethernet_subinterface(
+    iface: Interface, *, show_hints: bool = False
+) -> tuple[list[str], dict[str, tuple[int, int]]]:
     lines: list[str] = []
     rel: dict[str, tuple[int, int]] = {}
     base = _iface_key(iface.name)
@@ -172,19 +245,20 @@ def _format_ethernet_subinterface(iface: Interface) -> tuple[list[str], dict[str
         lines.append(f"          description: {_yaml_str(iface.description)}")
         rel[f"{base}:description"] = (desc_line, desc_line)
 
-    ipv4_start = len(lines) + 1
-    lines.append("          ipv4:")
-    if iface.ipv4_dhcp:
-        lines.append("            address: dhcp")
-        lines.append("            address_mask: null")
-    elif iface.ipv4_address:
-        lines.append(f"            address: {_yaml_str(iface.ipv4_address)}")
-        mask = iface.ipv4_address_mask or "255.255.255.255"
-        lines.append(f"            address_mask: {_yaml_str(mask)}")
-    else:
-        lines.append(f"            address: {_yaml_null_hint('type: ip address ...')}")
-        lines.append("            address_mask: null")
-    rel[f"{base}:ipv4"] = (ipv4_start, len(lines))
+    if iface.ipv4_dhcp or iface.ipv4_address or show_hints:
+        ipv4_start = len(lines) + 1
+        lines.append("          ipv4:")
+        if iface.ipv4_dhcp:
+            lines.append("            address: dhcp")
+            lines.append("            address_mask: null")
+        elif iface.ipv4_address:
+            lines.append(f"            address: {_yaml_str(iface.ipv4_address)}")
+            mask = iface.ipv4_address_mask or "255.255.255.255"
+            lines.append(f"            address_mask: {_yaml_str(mask)}")
+        else:
+            lines.append(f"            address: {_yaml_null_hint('type: ip address ...')}")
+            lines.append("            address_mask: null")
+        rel[f"{base}:ipv4"] = (ipv4_start, len(lines))
 
     ipv6_lines, _ = _format_ipv6_block(iface, "          ")
     if ipv6_lines:
@@ -201,34 +275,37 @@ def _format_ethernet_subinterface(iface: Interface) -> tuple[list[str], dict[str
     return lines, rel
 
 
-def _format_bdi(iface: Interface) -> tuple[list[str], dict[str, tuple[int, int]]]:
-    return _format_id_interface(iface, iface.bdi_id or "0")
+def _format_bdi(iface: Interface, *, show_hints: bool = False) -> tuple[list[str], dict[str, tuple[int, int]]]:
+    return _format_id_interface(iface, iface.bdi_id or "0", show_hints=show_hints)
 
 
-def _format_nve(iface: Interface) -> tuple[list[str], dict[str, tuple[int, int]]]:
-    return _format_id_interface(iface, iface.nve_id or "0")
+def _format_nve(iface: Interface, *, show_hints: bool = False) -> tuple[list[str], dict[str, tuple[int, int]]]:
+    return _format_id_interface(iface, iface.nve_id or "0", show_hints=show_hints)
 
 
-def _format_loopback(iface: Interface) -> tuple[list[str], dict[str, tuple[int, int]]]:
+def _format_loopback(
+    iface: Interface, *, show_hints: bool = False
+) -> tuple[list[str], dict[str, tuple[int, int]]]:
     lines: list[str] = []
     rel: dict[str, tuple[int, int]] = {}
     base = _iface_key(iface.name)
     lines.append(f"        - id: '{iface.loopback_id or '0'}'")
     block_start = 1
 
-    ipv4_start = len(lines) + 1
-    lines.append("          ipv4:")
-    if iface.ipv4_dhcp:
-        lines.append("            address: dhcp  # ⚠ semantic: unusual for loopback")
-        lines.append("            address_mask: null")
-    elif iface.ipv4_address:
-        lines.append(f"            address: {_yaml_str(iface.ipv4_address)}")
-        mask = iface.ipv4_address_mask or "255.255.255.255"
-        lines.append(f"            address_mask: {_yaml_str(mask)}")
-    else:
-        lines.append(f"            address: {_yaml_null_hint('type: ip address ...')}")
-        lines.append("            address_mask: null")
-    rel[f"{base}:ipv4"] = (ipv4_start, len(lines))
+    if iface.ipv4_dhcp or iface.ipv4_address or show_hints:
+        ipv4_start = len(lines) + 1
+        lines.append("          ipv4:")
+        if iface.ipv4_dhcp:
+            lines.append("            address: dhcp  # ⚠ semantic: unusual for loopback")
+            lines.append("            address_mask: null")
+        elif iface.ipv4_address:
+            lines.append(f"            address: {_yaml_str(iface.ipv4_address)}")
+            mask = iface.ipv4_address_mask or "255.255.255.255"
+            lines.append(f"            address_mask: {_yaml_str(mask)}")
+        else:
+            lines.append(f"            address: {_yaml_null_hint('type: ip address ...')}")
+            lines.append("            address_mask: null")
+        rel[f"{base}:ipv4"] = (ipv4_start, len(lines))
 
     ipv6_lines, _ipv6_rel = _format_ipv6_block(iface, "          ")
     if ipv6_lines:
@@ -245,7 +322,9 @@ def _format_loopback(iface: Interface) -> tuple[list[str], dict[str, tuple[int, 
     return lines, rel
 
 
-def _format_ethernet(iface: Interface) -> tuple[list[str], dict[str, tuple[int, int]]]:
+def _format_ethernet(
+    iface: Interface, *, show_hints: bool = False
+) -> tuple[list[str], dict[str, tuple[int, int]]]:
     lines: list[str] = []
     rel: dict[str, tuple[int, int]] = {}
     base = _iface_key(iface.name)
@@ -271,19 +350,20 @@ def _format_ethernet(iface: Interface) -> tuple[list[str], dict[str, tuple[int, 
     if iface.nat_outside:
         lines.append("          nat_outside: true")
 
-    ipv4_start = len(lines) + 1
-    lines.append("          ipv4:")
-    if iface.ipv4_dhcp:
-        lines.append("            address: dhcp")
-        lines.append("            address_mask: null")
-    elif iface.ipv4_address:
-        lines.append(f"            address: {_yaml_str(iface.ipv4_address)}")
-        mask = iface.ipv4_address_mask or "255.255.255.255"
-        lines.append(f"            address_mask: {_yaml_str(mask)}")
-    else:
-        lines.append(f"            address: {_yaml_null_hint('type: ip address ...')}")
-        lines.append("            address_mask: null")
-    rel[f"{base}:ipv4"] = (ipv4_start, len(lines))
+    if iface.ipv4_dhcp or iface.ipv4_address or show_hints:
+        ipv4_start = len(lines) + 1
+        lines.append("          ipv4:")
+        if iface.ipv4_dhcp:
+            lines.append("            address: dhcp")
+            lines.append("            address_mask: null")
+        elif iface.ipv4_address:
+            lines.append(f"            address: {_yaml_str(iface.ipv4_address)}")
+            mask = iface.ipv4_address_mask or "255.255.255.255"
+            lines.append(f"            address_mask: {_yaml_str(mask)}")
+        else:
+            lines.append(f"            address: {_yaml_null_hint('type: ip address ...')}")
+            lines.append("            address_mask: null")
+        rel[f"{base}:ipv4"] = (ipv4_start, len(lines))
 
     ipv6_lines, _ipv6_rel = _format_ipv6_block(iface, "          ")
     if ipv6_lines:
@@ -309,7 +389,9 @@ def _format_ethernet(iface: Interface) -> tuple[list[str], dict[str, tuple[int, 
     return lines, rel
 
 
-def _format_tunnel(iface: Interface) -> tuple[list[str], dict[str, tuple[int, int]]]:
+def _format_tunnel(
+    iface: Interface, *, show_hints: bool = False
+) -> tuple[list[str], dict[str, tuple[int, int]]]:
     lines: list[str] = []
     rel: dict[str, tuple[int, int]] = {}
     base = _iface_key(iface.name)
@@ -322,19 +404,20 @@ def _format_tunnel(iface: Interface) -> tuple[list[str], dict[str, tuple[int, in
         lines.append(f"          description: {_yaml_str(iface.description)}")
         rel[f"{base}:description"] = (desc_line, desc_line)
 
-    ipv4_start = len(lines) + 1
-    lines.append("          ipv4:")
-    if iface.ipv4_dhcp:
-        lines.append("            address: dhcp")
-        lines.append("            address_mask: null")
-    elif iface.ipv4_address:
-        lines.append(f"            address: {_yaml_str(iface.ipv4_address)}")
-        mask = iface.ipv4_address_mask or "255.255.255.255"
-        lines.append(f"            address_mask: {_yaml_str(mask)}")
-    else:
-        lines.append(f"            address: {_yaml_null_hint('type: ip address ...')}")
-        lines.append("            address_mask: null")
-    rel[f"{base}:ipv4"] = (ipv4_start, len(lines))
+    if iface.ipv4_dhcp or iface.ipv4_address or show_hints:
+        ipv4_start = len(lines) + 1
+        lines.append("          ipv4:")
+        if iface.ipv4_dhcp:
+            lines.append("            address: dhcp")
+            lines.append("            address_mask: null")
+        elif iface.ipv4_address:
+            lines.append(f"            address: {_yaml_str(iface.ipv4_address)}")
+            mask = iface.ipv4_address_mask or "255.255.255.255"
+            lines.append(f"            address_mask: {_yaml_str(mask)}")
+        else:
+            lines.append(f"            address: {_yaml_null_hint('type: ip address ...')}")
+            lines.append("            address_mask: null")
+        rel[f"{base}:ipv4"] = (ipv4_start, len(lines))
 
     ipv6_lines, _ipv6_rel = _format_ipv6_block(iface, "          ")
     if ipv6_lines:
@@ -351,7 +434,9 @@ def _format_tunnel(iface: Interface) -> tuple[list[str], dict[str, tuple[int, in
     return lines, rel
 
 
-def _format_vlan(iface: Interface) -> tuple[list[str], dict[str, tuple[int, int]]]:
+def _format_vlan(
+    iface: Interface, *, show_hints: bool = False
+) -> tuple[list[str], dict[str, tuple[int, int]]]:
     lines: list[str] = []
     rel: dict[str, tuple[int, int]] = {}
     base = _iface_key(iface.name)
@@ -369,19 +454,20 @@ def _format_vlan(iface: Interface) -> tuple[list[str], dict[str, tuple[int, int]
         lines.append(f"          description: {_yaml_str(iface.description)}")
         rel[f"{base}:description"] = (desc_line, desc_line)
 
-    ipv4_start = len(lines) + 1
-    lines.append("          ipv4:")
-    if iface.ipv4_dhcp:
-        lines.append("            address: dhcp")
-        lines.append("            address_mask: null")
-    elif iface.ipv4_address:
-        lines.append(f"            address: {_yaml_str(iface.ipv4_address)}")
-        mask = iface.ipv4_address_mask or "255.255.255.255"
-        lines.append(f"            address_mask: {_yaml_str(mask)}")
-    else:
-        lines.append(f"            address: {_yaml_null_hint('type: ip address ...')}")
-        lines.append("            address_mask: null")
-    rel[f"{base}:ipv4"] = (ipv4_start, len(lines))
+    if iface.ipv4_dhcp or iface.ipv4_address or show_hints:
+        ipv4_start = len(lines) + 1
+        lines.append("          ipv4:")
+        if iface.ipv4_dhcp:
+            lines.append("            address: dhcp")
+            lines.append("            address_mask: null")
+        elif iface.ipv4_address:
+            lines.append(f"            address: {_yaml_str(iface.ipv4_address)}")
+            mask = iface.ipv4_address_mask or "255.255.255.255"
+            lines.append(f"            address_mask: {_yaml_str(mask)}")
+        else:
+            lines.append(f"            address: {_yaml_null_hint('type: ip address ...')}")
+            lines.append("            address_mask: null")
+        rel[f"{base}:ipv4"] = (ipv4_start, len(lines))
 
     ipv6_lines, _ipv6_rel = _format_ipv6_block(iface, "          ")
     if ipv6_lines:
@@ -398,6 +484,15 @@ def _format_vlan(iface: Interface) -> tuple[list[str], dict[str, tuple[int, int]
     return lines, rel
 
 
+def _system_has_content(system) -> bool:
+    return bool(
+        system.hostname
+        or system.ipv6_unicast_routing
+        or system.mtu is not None
+        or system.ip_domain_name
+    )
+
+
 def _add_iface_block(
     builder: _YamlBuilder,
     iface: Interface,
@@ -410,13 +505,15 @@ def _add_iface_block(
 
 
 def _emit_system(builder: _YamlBuilder, config: DeviceConfiguration) -> None:
-    builder.append("      system:")
     system = config.system
+    if not _system_has_content(system) and not builder.show_hints:
+        return
+    builder.append("      system:")
     if system.hostname:
         hn_line = builder.append(f"        hostname: {_yaml_str(system.hostname)}")
         builder.mark("system.hostname", hn_line, hn_line)
-    else:
-        builder.append(f"        hostname: {_yaml_null_hint('type: hostn R1')}")
+    elif builder.show_hints:
+        builder.hint_line(f"        hostname: {_yaml_null_hint('type: hostn R1')}")
 
     if system.ipv6_unicast_routing:
         routing_line = builder.append("        ipv6_unicast_routing: true")
@@ -451,7 +548,7 @@ def _emit_users(builder: _YamlBuilder, config: DeviceConfiguration) -> None:
                 builder.mark(f"users:{user.name}", user_start, pass_line)
         builder.mark("users", start, len(builder.lines))
     elif config.section_is_empty("users"):
-        builder.append(f"      users:{_section_hint('type: username admin secret ...')}")
+        builder.hint_line(f"      users:{_section_hint('type: username admin secret ...')}")
 
 
 def _emit_banner(builder: _YamlBuilder, config: DeviceConfiguration) -> None:
@@ -469,7 +566,7 @@ def _emit_banner(builder: _YamlBuilder, config: DeviceConfiguration) -> None:
             builder.mark("banner.exec", exec_line, exec_line)
         builder.mark("banner", start, len(builder.lines))
     elif config.section_is_empty("banner"):
-        builder.append(f"      banner:{_section_hint('type: banner motd ^C...^C')}")
+        builder.hint_line(f"      banner:{_section_hint('type: banner motd ^C...^C')}")
 
 
 def _emit_clock(builder: _YamlBuilder, config: DeviceConfiguration) -> None:
@@ -485,13 +582,13 @@ def _emit_clock(builder: _YamlBuilder, config: DeviceConfiguration) -> None:
             builder.append(f"        summer_time_zone: {_yaml_str(clock.summer_time_zone)}")
         builder.mark("clock", start, len(builder.lines))
     elif config.section_is_empty("clock"):
-        builder.append(f"      clock:{_section_hint('type: clock timezone EST -5')}")
+        builder.hint_line(f"      clock:{_section_hint('type: clock timezone EST -5')}")
 
 
 def _emit_access_lists(builder: _YamlBuilder, config: DeviceConfiguration) -> None:
     acls = config.access_lists
     if acls is None or config.section_is_empty("access_lists"):
-        builder.append(f"      access_lists:{_section_hint('type: ip access-list standard ...')}")
+        builder.hint_line(f"      access_lists:{_section_hint('type: ip access-list standard ...')}")
         return
 
     builder.append("      access_lists:")
@@ -529,7 +626,7 @@ def _emit_access_lists(builder: _YamlBuilder, config: DeviceConfiguration) -> No
 
 def _emit_prefix_lists(builder: _YamlBuilder, config: DeviceConfiguration) -> None:
     if config.section_is_empty("prefix_lists"):
-        builder.append(f"      prefix_lists:{_section_hint('type: ip prefix-list ...')}")
+        builder.hint_line(f"      prefix_lists:{_section_hint('type: ip prefix-list ...')}")
         return
 
     builder.append("      prefix_lists:")
@@ -553,7 +650,7 @@ def _emit_prefix_lists(builder: _YamlBuilder, config: DeviceConfiguration) -> No
 
 def _emit_route_maps(builder: _YamlBuilder, config: DeviceConfiguration) -> None:
     if config.section_is_empty("route_maps"):
-        builder.append(f"      route_maps:{_section_hint('type: route-map RM permit 10')}")
+        builder.hint_line(f"      route_maps:{_section_hint('type: route-map RM permit 10')}")
         return
 
     builder.append("      route_maps:")
@@ -591,7 +688,7 @@ def _emit_route_maps(builder: _YamlBuilder, config: DeviceConfiguration) -> None
 
 def _emit_vrfs(builder: _YamlBuilder, config: DeviceConfiguration) -> None:
     if config.section_is_empty("vrfs"):
-        builder.append(f"      vrfs:{_section_hint('type: vrf definition MGMT')}")
+        builder.hint_line(f"      vrfs:{_section_hint('type: vrf definition MGMT')}")
         return
 
     builder.append("      vrfs:")
@@ -633,9 +730,11 @@ def _emit_routing(builder: _YamlBuilder, config: DeviceConfiguration) -> None:
     has_other = bool(routing.ospf_processes or routing.bgp or routing.isis)
 
     if not has_static and not has_other:
+        if not builder.show_hints:
+            return
         builder.append("      routing:")
         for subsection in ROUTING_SUBSECTION_HINTS:
-            builder.append(f"        {subsection.key}:{_section_hint(subsection.hint)}")
+            builder.hint_line(f"        {subsection.key}:{_section_hint(subsection.hint)}")
         return
 
     builder.append("      routing:")
@@ -729,7 +828,7 @@ def _emit_routing(builder: _YamlBuilder, config: DeviceConfiguration) -> None:
         if subsection.key == "isis" and routing.isis:
             continue
         if not config.section_is_empty("routing") and has_static and not has_other:
-            builder.append(f"        {subsection.key}:{_section_hint(subsection.hint)}")
+            builder.hint_line(f"        {subsection.key}:{_section_hint(subsection.hint)}")
 
 
 def _emit_interfaces(builder: _YamlBuilder, config: DeviceConfiguration) -> None:
@@ -745,40 +844,42 @@ def _emit_interfaces(builder: _YamlBuilder, config: DeviceConfiguration) -> None
         or ifaces.bdis
         or ifaces.nves
     )
+    show_hints = builder.show_hints
 
     builder.append("      interfaces:")
 
     if not loopbacks and not ethernets and not tunnels and not vlans and not has_extra:
-        builder.append("        # ← type: int lo0, int g0/0/0, int tun10, int vlan888")
-        builder.append("        port_channels:  # ← type: int po1")
-        builder.append("        port_channel_subinterfaces:  # ← type: int po1.100")
-        builder.append("        ethernet_subinterfaces:  # ← type: int g0/0/0.100")
-        builder.append("        bdis:  # ← type: int bdi100")
-        builder.append("        nves:  # ← type: int nve1")
+        if show_hints:
+            builder.hint_line("        # ← type: int lo0, int g0/0/0, int tun10, int vlan888")
+            builder.hint_line("        port_channels:  # ← type: int po1")
+            builder.hint_line("        port_channel_subinterfaces:  # ← type: int po1.100")
+            builder.hint_line("        ethernet_subinterfaces:  # ← type: int g0/0/0.100")
+            builder.hint_line("        bdis:  # ← type: int bdi100")
+            builder.hint_line("        nves:  # ← type: int nve1")
         return
 
     if loopbacks:
         builder.append("        loopbacks:")
         for iface in sorted(loopbacks, key=lambda i: int(i.loopback_id or "0")):
-            block, rel = _format_loopback(iface)
+            block, rel = _format_loopback(iface, show_hints=show_hints)
             _add_iface_block(builder, iface, block, rel)
 
     if ethernets:
         builder.append("        ethernets:")
         for iface in ethernets:
-            block, rel = _format_ethernet(iface)
+            block, rel = _format_ethernet(iface, show_hints=show_hints)
             _add_iface_block(builder, iface, block, rel)
 
     if vlans:
         builder.append("        vlans:")
         for iface in sorted(vlans, key=lambda i: int(i.vlan_id or "0")):
-            block, rel = _format_vlan(iface)
+            block, rel = _format_vlan(iface, show_hints=show_hints)
             _add_iface_block(builder, iface, block, rel)
 
     if tunnels:
         builder.append("        tunnels:")
         for iface in sorted(tunnels, key=lambda i: int(i.tunnel_id or "0")):
-            block, rel = _format_tunnel(iface)
+            block, rel = _format_tunnel(iface, show_hints=show_hints)
             _add_iface_block(builder, iface, block, rel)
 
     for key, hint, formatter in (
@@ -802,10 +903,10 @@ def _emit_interfaces(builder: _YamlBuilder, config: DeviceConfiguration) -> None
                 "nves": lambda i: int(i.nve_id or "0"),
             }.get(key, lambda i: i.name)
             for iface in sorted(bucket, key=sort_key):
-                block, rel = formatter(iface)
+                block, rel = formatter(iface, show_hints=show_hints)
                 _add_iface_block(builder, iface, block, rel)
-        elif not has_extra:
-            builder.append(f"        {key}:  {_section_hint(hint)}")
+        elif not has_extra and show_hints:
+            builder.hint_line(f"        {key}:  {_section_hint(hint)}")
 
 
 
@@ -814,40 +915,59 @@ def _emit_aaa(builder: _YamlBuilder, config: DeviceConfiguration) -> None:
     aaa = config.aaa
     if aaa and not config.section_is_empty("aaa"):
         start = builder.append("      aaa:")
+        aaa_rel: dict[str, tuple[int, int]] = {}
         if aaa.new_model:
-            builder.append("        new_model: true")
+            nm_line = builder.append("        new_model: true")
+            aaa_rel["aaa.new_model"] = (nm_line, nm_line)
         if aaa.authentication and aaa.authentication.logins:
-            builder.append("        authentication:")
-            builder.append("          logins:")
+            auth_start = builder.append("        authentication:")
+            logins_start = builder.append("          logins:")
             for login in aaa.authentication.logins:
-                builder.append(f'          - name: {_yaml_str(login.name)}')
+                login_key = _aaa_login_key(login.name)
+                login_start = builder.append(f"          - name: {_yaml_str(login.name)}")
                 if login.methods:
-                    builder.append("            methods:")
+                    methods_start = builder.append("            methods:")
                     for method in login.methods:
-                        builder.append(f'            - {_yaml_str(method)}')
+                        builder.append(f"            - {_yaml_str(method)}")
+                    aaa_rel[f"{login_key}:methods"] = (methods_start, len(builder.lines))
+                aaa_rel[login_key] = (login_start, len(builder.lines))
+            aaa_rel["aaa.authentication.logins"] = (logins_start, len(builder.lines))
+            aaa_rel["aaa.authentication"] = (auth_start, len(builder.lines))
         if aaa.authorization and aaa.authorization.execs:
-            builder.append("        authorization:")
-            builder.append("          execs:")
+            authz_start = builder.append("        authorization:")
+            execs_start = builder.append("          execs:")
             for authz in aaa.authorization.execs:
-                builder.append(f'          - name: {_yaml_str(authz.name)}')
+                authz_key = _aaa_authz_key(authz.name)
+                authz_start_line = builder.append(f"          - name: {_yaml_str(authz.name)}")
                 if authz.methods:
-                    builder.append("            methods:")
+                    methods_start = builder.append("            methods:")
                     for method in authz.methods:
-                        builder.append(f'            - {_yaml_str(method)}')
+                        builder.append(f"            - {_yaml_str(method)}")
+                    aaa_rel[f"{authz_key}:methods"] = (methods_start, len(builder.lines))
+                aaa_rel[authz_key] = (authz_start_line, len(builder.lines))
+            aaa_rel["aaa.authorization.execs"] = (execs_start, len(builder.lines))
+            aaa_rel["aaa.authorization"] = (authz_start, len(builder.lines))
         if aaa.accounting and aaa.accounting.execs:
-            builder.append("        accounting:")
-            builder.append("          execs:")
+            acct_start = builder.append("        accounting:")
+            execs_start = builder.append("          execs:")
             for acct in aaa.accounting.execs:
-                builder.append(f'          - name: {_yaml_str(acct.name)}')
+                acct_key = _aaa_acct_key(acct.name)
+                acct_start_line = builder.append(f"          - name: {_yaml_str(acct.name)}")
                 if acct.action_type:
-                    builder.append(f'            action_type: {_yaml_str(acct.action_type)}')
+                    action_line = builder.append(f"            action_type: {_yaml_str(acct.action_type)}")
+                    aaa_rel[f"{acct_key}:action_type"] = (action_line, action_line)
                 if acct.start_stop_groups:
-                    builder.append("            start_stop_groups:")
+                    groups_start = builder.append("            start_stop_groups:")
                     for grp in acct.start_stop_groups:
-                        builder.append(f'            - {_yaml_str(grp)}')
+                        builder.append(f"            - {_yaml_str(grp)}")
+                    aaa_rel[f"{acct_key}:start_stop_groups"] = (groups_start, len(builder.lines))
+                aaa_rel[acct_key] = (acct_start_line, len(builder.lines))
+            aaa_rel["aaa.accounting.execs"] = (execs_start, len(builder.lines))
+            aaa_rel["aaa.accounting"] = (acct_start, len(builder.lines))
+        _apply_crypto_marks(builder, aaa_rel)
         builder.mark("aaa", start, len(builder.lines))
     elif config.section_is_empty("aaa"):
-        builder.append(f"      aaa:{_section_hint('type: aaa new-model ...')}")
+        builder.hint_line(f"      aaa:{_section_hint('type: aaa new-model ...')}")
 
 
 def _emit_snmp_server(builder: _YamlBuilder, config: DeviceConfiguration) -> None:
@@ -866,22 +986,43 @@ def _emit_snmp_server(builder: _YamlBuilder, config: DeviceConfiguration) -> Non
             builder.append(f"        location: {_yaml_str(snmp.location)}")
         builder.mark("snmp_server", start, len(builder.lines))
     elif config.section_is_empty("snmp_server"):
-        builder.append(f"      snmp_server:{_section_hint('type: snmp-server community ...')}")
+        builder.hint_line(f"      snmp_server:{_section_hint('type: snmp-server community ...')}")
+
+
+def _ntp_endpoint_key(kind: str, ip: str) -> str:
+    bucket = "peers" if kind == "peer" else "servers"
+    return f"ntp.{bucket}:{ip}"
 
 
 def _emit_ntp(builder: _YamlBuilder, config: DeviceConfiguration) -> None:
     ntp = config.ntp
     if ntp and not config.section_is_empty("ntp"):
         start = builder.append("      ntp:")
+        ntp_rel: dict[str, tuple[int, int]] = {}
         if ntp.servers:
-            builder.append("        servers:")
+            servers_start = builder.append("        servers:")
             for srv in ntp.servers:
-                builder.append(f'        - ip: {_yaml_str(srv.ip)}')
+                entry_start = builder.append(f'        - ip: {_yaml_str(srv.ip)}')
+                if srv.vrf:
+                    builder.append(f'          vrf: {_yaml_str(srv.vrf)}')
                 if srv.prefer:
                     builder.append("          prefer: true")
+                ntp_rel[_ntp_endpoint_key("server", srv.ip)] = (entry_start, len(builder.lines))
+            ntp_rel["ntp.servers"] = (servers_start, len(builder.lines))
+        if ntp.peers:
+            peers_start = builder.append("        peers:")
+            for peer in ntp.peers:
+                entry_start = builder.append(f'        - ip: {_yaml_str(peer.ip)}')
+                if peer.vrf:
+                    builder.append(f'          vrf: {_yaml_str(peer.vrf)}')
+                if peer.prefer:
+                    builder.append("          prefer: true")
+                ntp_rel[_ntp_endpoint_key("peer", peer.ip)] = (entry_start, len(builder.lines))
+            ntp_rel["ntp.peers"] = (peers_start, len(builder.lines))
+        _apply_crypto_marks(builder, ntp_rel)
         builder.mark("ntp", start, len(builder.lines))
     elif config.section_is_empty("ntp"):
-        builder.append(f"      ntp:{_section_hint('type: ntp server 10.0.0.1')}")
+        builder.hint_line(f"      ntp:{_section_hint('type: ntp server 10.0.0.1')}")
 
 
 def _emit_dhcp(builder: _YamlBuilder, config: DeviceConfiguration) -> None:
@@ -892,7 +1033,7 @@ def _emit_dhcp(builder: _YamlBuilder, config: DeviceConfiguration) -> None:
             builder.append("        enabled: true")
         builder.mark("dhcp", start, len(builder.lines))
     elif config.section_is_empty("dhcp"):
-        builder.append(f"      dhcp:{_section_hint('type: ip dhcp ...')}")
+        builder.hint_line(f"      dhcp:{_section_hint('type: ip dhcp ...')}")
 
 
 def _emit_dhcp_pools(builder: _YamlBuilder, config: DeviceConfiguration) -> None:
@@ -914,7 +1055,7 @@ def _emit_dhcp_pools(builder: _YamlBuilder, config: DeviceConfiguration) -> None
                     builder.append(f'        - {_yaml_str(dns)}')
         builder.mark("dhcp_pools", start, len(builder.lines))
     elif config.section_is_empty("dhcp_pools"):
-        builder.append(f"      dhcp_pools:{_section_hint('type: ip dhcp pool LAN')}")
+        builder.hint_line(f"      dhcp_pools:{_section_hint('type: ip dhcp pool LAN')}")
 
 
 def _emit_nat(builder: _YamlBuilder, config: DeviceConfiguration) -> None:
@@ -935,7 +1076,259 @@ def _emit_nat(builder: _YamlBuilder, config: DeviceConfiguration) -> None:
                             builder.append("            overload: true")
         builder.mark("nat", start, len(builder.lines))
     elif config.section_is_empty("nat"):
-        builder.append(f"      nat:{_section_hint('type: ip nat inside source ...')}")
+        builder.hint_line(f"      nat:{_section_hint('type: ip nat inside source ...')}")
+
+def _emit_crypto_bool(builder: _YamlBuilder, indent: str, key: str, value: bool | None) -> int | None:
+    if value:
+        return builder.append(f"{indent}{key}: true")
+    return None
+
+
+def _emit_crypto_str(builder: _YamlBuilder, indent: str, key: str, value: str | None) -> int | None:
+    if value:
+        return builder.append(f"{indent}{key}: {_yaml_str(value)}")
+    return None
+
+
+def _emit_ikev2_keyring_peer(builder: _YamlBuilder, peer: CryptoIkev2KeyringPeer) -> None:
+    builder.append(f"              - name: {_yaml_str(peer.name)}")
+    _emit_crypto_str(builder, "                ", "description", peer.description)
+    _emit_crypto_str(builder, "                ", "hostname", peer.hostname)
+    _emit_crypto_str(builder, "                ", "ipv4_address", peer.ipv4_address)
+    _emit_crypto_str(builder, "                ", "ipv4_mask", peer.ipv4_mask)
+    _emit_crypto_str(builder, "                ", "ipv6_prefix", peer.ipv6_prefix)
+    _emit_crypto_str(builder, "                ", "identity_fqdn_domain", peer.identity_fqdn_domain)
+    _emit_crypto_str(builder, "                ", "identity_key_id", peer.identity_key_id)
+    _emit_crypto_str(builder, "                ", "pre_shared_key", peer.pre_shared_key)
+    _emit_crypto_str(builder, "                ", "pre_shared_key_local", peer.pre_shared_key_local)
+    _emit_crypto_str(builder, "                ", "pre_shared_key_remote", peer.pre_shared_key_remote)
+
+
+def _emit_ikev2_profile(builder: _YamlBuilder, profile: CryptoIkev2Profile) -> dict[str, tuple[int, int]]:
+    rel: dict[str, tuple[int, int]] = {}
+    base = _crypto_profile_key(profile.name)
+    block_start = builder.append(f"            - name: {_yaml_str(profile.name)}")
+    desc_line = _emit_crypto_str(builder, "              ", "description", profile.description)
+    if desc_line:
+        rel[f"{base}:description"] = (desc_line, desc_line)
+    auth_local = _emit_crypto_bool(builder, "              ", "authentication_local_pre_share", profile.authentication_local_pre_share)
+    if auth_local:
+        rel[f"{base}:authentication_local_pre_share"] = (auth_local, auth_local)
+    auth_remote = _emit_crypto_bool(builder, "              ", "authentication_remote_pre_share", profile.authentication_remote_pre_share)
+    if auth_remote:
+        rel[f"{base}:authentication_remote_pre_share"] = (auth_remote, auth_remote)
+    _emit_crypto_bool(builder, "              ", "config_exchange_request", profile.config_exchange_request)
+    if profile.dpd_interval is not None:
+        builder.append(f"              dpd_interval: {profile.dpd_interval}")
+    _emit_crypto_str(builder, "              ", "dpd_query", profile.dpd_query)
+    if profile.dpd_retry is not None:
+        builder.append(f"              dpd_retry: {profile.dpd_retry}")
+    _emit_crypto_str(builder, "              ", "identity_local_key_id", profile.identity_local_key_id)
+    _emit_crypto_str(builder, "              ", "ivrf", profile.ivrf)
+    keyring_line = _emit_crypto_str(builder, "              ", "keyring_local", profile.keyring_local)
+    if keyring_line:
+        rel[f"{base}:keyring_local"] = (keyring_line, keyring_line)
+    if profile.lifetime is not None:
+        builder.append(f"              lifetime: {profile.lifetime}")
+    _emit_crypto_str(builder, "              ", "match_address_local_ip", profile.match_address_local_ip)
+    if profile.match_address_local_interface_loopback_legacy is not None:
+        builder.append(
+            f"              match_address_local_interface_loopback_legacy: {profile.match_address_local_interface_loopback_legacy}"
+        )
+    _emit_crypto_str(builder, "              ", "match_fvrf", profile.match_fvrf)
+    _emit_crypto_bool(builder, "              ", "match_fvrf_any", profile.match_fvrf_any)
+    if profile.match_identity_remote_ipv4_addresses:
+        builder.append("              match_identity_remote_ipv4_addresses:")
+        for addr in profile.match_identity_remote_ipv4_addresses:
+            builder.append(f"                - address: {_yaml_str(addr.address)}")
+            _emit_crypto_str(builder, "                  ", "mask", addr.mask)
+    if profile.match_identity_remote_ipv6_prefixes:
+        builder.append("              match_identity_remote_ipv6_prefixes:")
+        for prefix in profile.match_identity_remote_ipv6_prefixes:
+            builder.append(f"                - {_yaml_str(prefix)}")
+    if profile.match_identity_remote_keys:
+        builder.append("              match_identity_remote_keys:")
+        for key in profile.match_identity_remote_keys:
+            builder.append(f"                - {_yaml_str(key)}")
+    _emit_crypto_bool(builder, "              ", "match_inbound_only", profile.match_inbound_only)
+    rel[base] = (block_start, len(builder.lines))
+    return rel
+
+
+def _apply_crypto_marks(builder: _YamlBuilder, rel: dict[str, tuple[int, int]]) -> None:
+    for key, (start, end) in rel.items():
+        builder.mark(key, start, end)
+
+
+def _emit_crypto(builder: _YamlBuilder, config: DeviceConfiguration) -> None:
+    crypto = config.crypto
+    if crypto is None or crypto.is_empty():
+        if config.section_is_empty("crypto"):
+            builder.hint_line(f"      crypto:{_section_hint('type: crypto ikev2 proposal ...')}")
+        return
+
+    start = builder.append("      crypto:")
+    crypto_rel: dict[str, tuple[int, int]] = {}
+
+    if crypto.ipsec_profiles:
+        ipsec_profiles_start = builder.append("        ipsec_profiles:")
+        for prof in crypto.ipsec_profiles:
+            prof_key = _crypto_ipsec_profile_key(prof.name)
+            prof_start = builder.append(f"          - name: {_yaml_str(prof.name)}")
+            if prof.set_transform_set:
+                ts_start = len(builder.lines) + 1
+                builder.append("            set_transform_set:")
+                for ts in prof.set_transform_set:
+                    builder.append(f"              - {_yaml_str(ts)}")
+                crypto_rel[f"{prof_key}:set_transform_set"] = (ts_start, len(builder.lines))
+            ikev2_line = _emit_crypto_str(builder, "            ", "set_ikev2_profile", prof.set_ikev2_profile)
+            if ikev2_line:
+                crypto_rel[f"{prof_key}:set_ikev2_profile"] = (ikev2_line, ikev2_line)
+            _emit_crypto_str(builder, "            ", "set_isakmp_profile", prof.set_isakmp_profile)
+            _emit_crypto_str(builder, "            ", "set_pfs_group", prof.set_pfs_group)
+            if prof.set_security_association_lifetime_seconds is not None:
+                builder.append(
+                    f"            set_security_association_lifetime_seconds: {prof.set_security_association_lifetime_seconds}"
+                )
+            crypto_rel[prof_key] = (prof_start, len(builder.lines))
+        crypto_rel["crypto.ipsec_profiles"] = (ipsec_profiles_start, len(builder.lines))
+
+    if crypto.ipsec_transform_sets:
+        transform_sets_start = builder.append("        ipsec_transform_sets:")
+        for ts in crypto.ipsec_transform_sets:
+            ts_key = _crypto_transform_set_key(ts.name)
+            ts_start = builder.append(f"          - name: {_yaml_str(ts.name)}")
+            esp_line = _emit_crypto_str(builder, "            ", "esp", ts.esp)
+            if esp_line:
+                crypto_rel[f"{ts_key}:esp"] = (esp_line, esp_line)
+            hmac_line = _emit_crypto_str(builder, "            ", "esp_hmac", ts.esp_hmac)
+            if hmac_line:
+                crypto_rel[f"{ts_key}:esp_hmac"] = (hmac_line, hmac_line)
+            mode_line = _emit_crypto_bool(builder, "            ", "mode_tunnel", ts.mode_tunnel)
+            if mode_line:
+                crypto_rel[f"{ts_key}:mode_tunnel"] = (mode_line, mode_line)
+            crypto_rel[ts_key] = (ts_start, len(builder.lines))
+        crypto_rel["crypto.ipsec_transform_sets"] = (transform_sets_start, len(builder.lines))
+
+    ikev2 = crypto.ikev2
+    if ikev2 and not ikev2.is_empty():
+        ikev2_start = builder.append("        ikev2:")
+        if ikev2.nat_keepalive is not None:
+            nat_line = builder.append(f"          nat_keepalive: {ikev2.nat_keepalive}")
+            crypto_rel["crypto.ikev2:nat_keepalive"] = (nat_line, nat_line)
+        if ikev2.dpd_interval is not None:
+            dpd_line = builder.append(f"          dpd_interval: {ikev2.dpd_interval}")
+            crypto_rel["crypto.ikev2:dpd_interval"] = (dpd_line, dpd_line)
+        _emit_crypto_str(builder, "          ", "dpd_query", ikev2.dpd_query)
+        if ikev2.dpd_retry is not None:
+            builder.append(f"          dpd_retry: {ikev2.dpd_retry}")
+        if ikev2.proposals:
+            proposals_start = builder.append("          proposals:")
+            for prop in ikev2.proposals:
+                prop_key = _crypto_proposal_key(prop.name)
+                prop_start = builder.append(f"            - name: {_yaml_str(prop.name)}")
+                if prop.encryption:
+                    enc_start = len(builder.lines) + 1
+                    builder.append("              encryption:")
+                    for enc in prop.encryption:
+                        builder.append(f"                - {_yaml_str(enc)}")
+                    crypto_rel[f"{prop_key}:encryption"] = (enc_start, len(builder.lines))
+                if prop.group:
+                    grp_start = len(builder.lines) + 1
+                    builder.append("              group:")
+                    for grp in prop.group:
+                        builder.append(f"                - {_yaml_str(grp)}")
+                    crypto_rel[f"{prop_key}:group"] = (grp_start, len(builder.lines))
+                if prop.integrity:
+                    int_start = len(builder.lines) + 1
+                    builder.append("              integrity:")
+                    for val in prop.integrity:
+                        builder.append(f"                - {_yaml_str(val)}")
+                    crypto_rel[f"{prop_key}:integrity"] = (int_start, len(builder.lines))
+                if prop.prf:
+                    prf_start = len(builder.lines) + 1
+                    builder.append("              prf:")
+                    for val in prop.prf:
+                        builder.append(f"                - {_yaml_str(val)}")
+                    crypto_rel[f"{prop_key}:prf"] = (prf_start, len(builder.lines))
+                crypto_rel[prop_key] = (prop_start, len(builder.lines))
+            crypto_rel["crypto.ikev2.proposals"] = (proposals_start, len(builder.lines))
+        if ikev2.policies:
+            policies_start = builder.append("          policies:")
+            for pol in ikev2.policies:
+                pol_key = _crypto_policy_key(pol.name)
+                pol_start = builder.append(f"            - name: {_yaml_str(pol.name)}")
+                if pol.proposals:
+                    prop_start = len(builder.lines) + 1
+                    builder.append("              proposals:")
+                    for prop in pol.proposals:
+                        builder.append(f"                - {_yaml_str(prop)}")
+                    crypto_rel[f"{pol_key}:proposals"] = (prop_start, len(builder.lines))
+                fvrf_line = _emit_crypto_str(builder, "              ", "match_fvrf", pol.match_fvrf)
+                if fvrf_line:
+                    crypto_rel[f"{pol_key}:match_fvrf"] = (fvrf_line, fvrf_line)
+                fvrf_any = _emit_crypto_bool(builder, "              ", "match_fvrf_any", pol.match_fvrf_any)
+                if fvrf_any:
+                    crypto_rel[f"{pol_key}:match_fvrf_any"] = (fvrf_any, fvrf_any)
+                if pol.match_address_local_ip:
+                    local_start = len(builder.lines) + 1
+                    builder.append("              match_address_local_ip:")
+                    for ip in pol.match_address_local_ip:
+                        builder.append(f"                - {_yaml_str(ip)}")
+                    crypto_rel[f"{pol_key}:match_address_local_ip"] = (local_start, len(builder.lines))
+                _emit_crypto_bool(builder, "              ", "match_inbound_only", pol.match_inbound_only)
+                crypto_rel[pol_key] = (pol_start, len(builder.lines))
+            crypto_rel["crypto.ikev2.policies"] = (policies_start, len(builder.lines))
+        if ikev2.keyrings:
+            keyrings_start = builder.append("          keyrings:")
+            for kr in ikev2.keyrings:
+                kr_key = _crypto_keyring_key(kr.name)
+                kr_start = builder.append(f"            - name: {_yaml_str(kr.name)}")
+                if kr.peers:
+                    peers_start = builder.append("              peers:")
+                    for peer in kr.peers:
+                        peer_start = len(builder.lines) + 1
+                        _emit_ikev2_keyring_peer(builder, peer)
+                        crypto_rel[f"{kr_key}:peers:{peer.name}"] = (peer_start, len(builder.lines))
+                    crypto_rel[f"{kr_key}:peers"] = (peers_start, len(builder.lines))
+                crypto_rel[kr_key] = (kr_start, len(builder.lines))
+            crypto_rel["crypto.ikev2.keyrings"] = (keyrings_start, len(builder.lines))
+        if ikev2.profiles:
+            profiles_start = builder.append("          profiles:")
+            for profile in ikev2.profiles:
+                crypto_rel.update(_emit_ikev2_profile(builder, profile))
+            crypto_rel["crypto.ikev2.profiles"] = (profiles_start, len(builder.lines))
+        crypto_rel["crypto.ikev2"] = (ikev2_start, len(builder.lines))
+
+    pki = crypto.pki
+    if pki and not pki.is_empty():
+        pki_start = builder.append("        pki:")
+        trustpoints_start = builder.append("          trustpoints:")
+        for tp in pki.trustpoints:
+            tp_key = _crypto_trustpoint_key(tp.id)
+            tp_start = builder.append(f"            - id: {_yaml_str(tp.id)}")
+            enroll_line = _emit_crypto_bool(builder, "              ", "enrollment_terminal", tp.enrollment_terminal)
+            if enroll_line:
+                crypto_rel[f"{tp_key}:enrollment_terminal"] = (enroll_line, enroll_line)
+            _emit_crypto_bool(builder, "              ", "enrollment_selfsigned", tp.enrollment_selfsigned)
+            rsa_line = _emit_crypto_str(builder, "              ", "rsakeypair", tp.rsakeypair)
+            if rsa_line:
+                crypto_rel[f"{tp_key}:rsakeypair"] = (rsa_line, rsa_line)
+            _emit_crypto_str(builder, "              ", "subject_name", tp.subject_name)
+            usage_line = _emit_crypto_str(builder, "              ", "usage", tp.usage)
+            if usage_line:
+                crypto_rel[f"{tp_key}:usage"] = (usage_line, usage_line)
+            if tp.revocation_check:
+                builder.append("              revocation_check:")
+                for rc in tp.revocation_check:
+                    builder.append(f"                - {_yaml_str(rc)}")
+            crypto_rel[tp_key] = (tp_start, len(builder.lines))
+        crypto_rel["crypto.pki.trustpoints"] = (trustpoints_start, len(builder.lines))
+        crypto_rel["crypto.pki"] = (pki_start, len(builder.lines))
+
+    _apply_crypto_marks(builder, crypto_rel)
+    builder.mark("crypto", start, len(builder.lines))
+
 
 _SECTION_EMITTERS: dict[str, Callable[[_YamlBuilder, DeviceConfiguration], None]] = {
     "system": _emit_system,
@@ -954,12 +1347,19 @@ _SECTION_EMITTERS: dict[str, Callable[[_YamlBuilder, DeviceConfiguration], None]
     "dhcp": _emit_dhcp,
     "dhcp_pools": _emit_dhcp_pools,
     "nat": _emit_nat,
+    "crypto": _emit_crypto,
 }
 
 
-def generate_nac_yaml(device: Device) -> NacYamlResult:
+def generate_nac_yaml(device: Device, *, show_hints: bool = False) -> NacYamlResult:
     """Generate apply-safe nac.yaml with YAML line ranges for highlighting."""
-    builder = _YamlBuilder(SCAFFOLD_HEADER)
+    header = SCAFFOLD_HEADER
+    if show_hints:
+        header += "# Scaffold hints: on — empty sections show # ← type: ... placeholders\n\n"
+    else:
+        header += "# Scaffold hints: off — only typed CLI appears in YAML\n\n"
+
+    builder = _YamlBuilder(header, show_hints=show_hints)
     config = device.configuration
 
     builder.append("iosxe:")
@@ -976,6 +1376,6 @@ def generate_nac_yaml(device: Device) -> NacYamlResult:
         if emitter is not None:
             emitter(builder, config)
         elif config.section_is_empty(section.key):
-            builder.append(f"      {section.key}:{_section_hint(section.hint)}")
+            builder.hint_line(f"      {section.key}:{_section_hint(section.hint)}")
 
     return builder.build()

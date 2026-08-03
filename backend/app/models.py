@@ -446,10 +446,12 @@ class SnmpServerConfig(BaseModel):
 class NtpServer(BaseModel):
     ip: str
     prefer: bool | None = None
+    vrf: str | None = None
 
 
 class NtpConfig(BaseModel):
     servers: list[NtpServer] = Field(default_factory=list)
+    peers: list[NtpServer] = Field(default_factory=list)
 
 
 
@@ -521,8 +523,132 @@ class LicenseConfig(BaseModel):
     model_config = {"extra": "allow"}
 
 
+class CryptoIkev2Proposal(BaseModel):
+    name: str
+    encryption: list[str] = Field(default_factory=list)
+    group: list[str] = Field(default_factory=list)
+    integrity: list[str] = Field(default_factory=list)
+    prf: list[str] = Field(default_factory=list)
+
+
+class CryptoIkev2Policy(BaseModel):
+    name: str
+    proposals: list[str] = Field(default_factory=list)
+    match_fvrf: str | None = None
+    match_fvrf_any: bool | None = None
+    match_address_local_ip: list[str] = Field(default_factory=list)
+    match_inbound_only: bool | None = None
+
+
+class CryptoIkev2KeyringPeer(BaseModel):
+    name: str
+    description: str | None = None
+    hostname: str | None = None
+    ipv4_address: str | None = None
+    ipv4_mask: str | None = None
+    ipv6_prefix: str | None = None
+    identity_fqdn_domain: str | None = None
+    identity_key_id: str | None = None
+    pre_shared_key: str | None = None
+    pre_shared_key_local: str | None = None
+    pre_shared_key_remote: str | None = None
+
+
+class CryptoIkev2Keyring(BaseModel):
+    name: str
+    peers: list[CryptoIkev2KeyringPeer] = Field(default_factory=list)
+
+
+class CryptoIkev2ProfileMatchRemoteIpv4(BaseModel):
+    address: str
+    mask: str | None = None
+
+
+class CryptoIkev2Profile(BaseModel):
+    name: str
+    description: str | None = None
+    authentication_local_pre_share: bool | None = None
+    authentication_remote_pre_share: bool | None = None
+    config_exchange_request: bool | None = None
+    dpd_interval: int | None = None
+    dpd_query: str | None = None
+    dpd_retry: int | None = None
+    identity_local_key_id: str | None = None
+    ivrf: str | None = None
+    keyring_local: str | None = None
+    lifetime: int | None = None
+    match_address_local_ip: str | None = None
+    match_address_local_interface_loopback_legacy: int | None = None
+    match_fvrf: str | None = None
+    match_fvrf_any: bool | None = None
+    match_identity_remote_ipv4_addresses: list[CryptoIkev2ProfileMatchRemoteIpv4] = Field(
+        default_factory=list
+    )
+    match_identity_remote_ipv6_prefixes: list[str] = Field(default_factory=list)
+    match_identity_remote_keys: list[str] = Field(default_factory=list)
+    match_inbound_only: bool | None = None
+
+
+class CryptoIkev2Config(BaseModel):
+    nat_keepalive: int | None = None
+    dpd_interval: int | None = None
+    dpd_query: str | None = None
+    dpd_retry: int | None = None
+    proposals: list[CryptoIkev2Proposal] = Field(default_factory=list)
+    policies: list[CryptoIkev2Policy] = Field(default_factory=list)
+    keyrings: list[CryptoIkev2Keyring] = Field(default_factory=list)
+    profiles: list[CryptoIkev2Profile] = Field(default_factory=list)
+
+    def is_empty(self) -> bool:
+        return len(self.model_dump(exclude_none=True)) == 0
+
+
+class CryptoIpsecTransformSet(BaseModel):
+    name: str
+    esp: str | None = None
+    esp_hmac: str | None = None
+    mode_tunnel: bool | None = None
+
+
+class CryptoIpsecProfile(BaseModel):
+    name: str
+    set_transform_set: list[str] = Field(default_factory=list)
+    set_ikev2_profile: str | None = None
+    set_isakmp_profile: str | None = None
+    set_pfs_group: str | None = None
+    set_security_association_lifetime_seconds: int | None = None
+
+
+class CryptoPkiTrustpoint(BaseModel):
+    id: str
+    enrollment_terminal: bool | None = None
+    enrollment_selfsigned: bool | None = None
+    rsakeypair: str | None = None
+    subject_name: str | None = None
+    usage: str | None = None
+    revocation_check: list[str] = Field(default_factory=list)
+
+
+class CryptoPkiConfig(BaseModel):
+    trustpoints: list[CryptoPkiTrustpoint] = Field(default_factory=list)
+
+    def is_empty(self) -> bool:
+        return not self.trustpoints
+
+
 class CryptoConfig(BaseModel):
-    model_config = {"extra": "allow"}
+    ipsec_profiles: list[CryptoIpsecProfile] = Field(default_factory=list)
+    ipsec_transform_sets: list[CryptoIpsecTransformSet] = Field(default_factory=list)
+    ikev2: CryptoIkev2Config | None = None
+    pki: CryptoPkiConfig | None = None
+
+    def is_empty(self) -> bool:
+        return (
+            not self.ipsec_profiles
+            and not self.ipsec_transform_sets
+            and (self.ikev2 is None or self.ikev2.is_empty())
+            and (self.pki is None or self.pki.is_empty())
+        )
 
 
 class FlowConfig(BaseModel):
@@ -710,6 +836,8 @@ class DeviceConfiguration(BaseModel):
                 return not (value.standard or value.extended or value.role_based)
             if isinstance(value, CommunityListsConfig):
                 return not (value.standard or value.expanded)
+            if isinstance(value, CryptoConfig):
+                return value.is_empty()
             dumped = value.model_dump(exclude_none=True)
             return len(dumped) == 0
         return False

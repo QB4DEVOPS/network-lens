@@ -384,7 +384,7 @@ def test_full_schema_scaffold_hints():
     """Empty CLI shows comment hints for unwired NaC sections (apply-safe)."""
     from app.nac_sections import NAC_CONFIGURATION_SECTIONS
 
-    yaml_out = generate_nac_yaml(parse_cli("").device).content
+    yaml_out = generate_nac_yaml(parse_cli("").device, show_hints=True).content
     assert "users:  # ← type: username admin secret" in yaml_out
     assert "vrfs:  # ← type: vrf definition MGMT" in yaml_out
     assert "aaa:  # ← type: aaa new-model" in yaml_out
@@ -394,6 +394,30 @@ def test_full_schema_scaffold_hints():
     assert "loopbacks:" not in yaml_out
     for section in NAC_CONFIGURATION_SECTIONS:
         assert f"{section.key}:" in yaml_out or f"{section.key}:  #" in yaml_out
+
+
+def test_scaffold_hints_off():
+    """Default YAML omits scaffold placeholder comments."""
+    yaml_out = generate_nac_yaml(parse_cli("").device, show_hints=False).content
+    assert "Scaffold hints: off" in yaml_out
+    assert "# ←" not in yaml_out
+    assert "interfaces:" in yaml_out
+    assert "users:" not in yaml_out
+    assert "routing:" not in yaml_out
+
+
+def test_scaffold_hints_on_header():
+    yaml_out = generate_nac_yaml(parse_cli("").device, show_hints=True).content
+    assert "Scaffold hints: on" in yaml_out
+
+
+def test_sync_show_hints_param():
+    from app.main import SyncRequest, sync
+
+    off = sync(SyncRequest(cli_text="", show_hints=False))
+    assert "# ←" not in off.nac_yaml
+    on = sync(SyncRequest(cli_text="", show_hints=True))
+    assert "users:  # ← type: username admin secret" in on.nac_yaml
 
 
 def test_device_has_full_configuration_shape():
@@ -586,10 +610,14 @@ username scrypt secret 5 $8$hashed"""
 
 
 def test_users_apply_safe_no_phantom():
-    """NDO-172: empty CLI must not emit phantom users block."""
+    """NDO-172: hostname-only CLI must not emit phantom users block."""
     yaml_out = generate_nac_yaml(parse_cli("hostn R1").device).content
-    assert "users:" in yaml_out
+    assert "users:" not in yaml_out
     assert "      users:\n        - name:" not in yaml_out
+
+    hinted = generate_nac_yaml(parse_cli("hostn R1").device, show_hints=True).content
+    assert "users:  # ← type: username admin secret" in hinted
+    assert "      users:\n        - name:" not in hinted
 
 
 def test_system_mtu_domain_clock_banner():
@@ -807,6 +835,35 @@ aaa accounting login default start-stop group tacacs+"""
     assert "aaa:  # " not in yaml_out
 
 
+def test_aaa_line_mappings():
+    from app.main import sync
+    from app.main import SyncRequest
+
+    cli = """aaa new-model
+aaa authentication login default local
+aaa authorization exec default local
+aaa accounting login default start-stop group tacacs+"""
+    resp = sync(SyncRequest(cli_text=cli))
+    assert "aaa_line_mappings" in resp.features
+
+    new_model = next(m for m in resp.mappings if m.field_key == "aaa.new_model")
+    assert new_model.cli_line == 1
+
+    login_map = next(m for m in resp.mappings if m.field_key == "aaa.authentication.logins:default")
+    assert login_map.cli_line == 2
+    assert login_map.yaml_end_line > login_map.yaml_start_line
+
+    authz_map = next(m for m in resp.mappings if m.field_key == "aaa.authorization.execs:default")
+    assert authz_map.cli_line == 3
+    assert authz_map.yaml_start_line != login_map.yaml_start_line
+
+    acct_map = next(m for m in resp.mappings if m.field_key == "aaa.accounting.execs:default")
+    assert acct_map.cli_line == 4
+    yaml_lines = resp.nac_yaml.splitlines()
+    acct_block = yaml_lines[acct_map.yaml_start_line - 1 : acct_map.yaml_end_line]
+    assert any("start_stop_groups:" in line for line in acct_block)
+
+
 def test_snmp_and_ntp():
     cli = """snmp-server community public RO
 snmp-server contact lab@example.com
@@ -829,6 +886,59 @@ ntp server 10.0.0.1 prefer"""
     assert "servers:" in yaml_out
     assert 'ip: "10.0.0.1"' in yaml_out
     assert "prefer: true" in yaml_out
+
+
+def test_ntp_server_vrf():
+    cli = """hostn R1
+ntp server 1.1.1.1
+ntp server 1.1.1.2 vrf Mgmt-vrf
+ntp peer 1.1.1.3"""
+    device = parse_cli(cli).device
+    servers = device.configuration.ntp.servers
+    peers = device.configuration.ntp.peers
+    assert len(servers) == 2
+    assert servers[0].ip == "1.1.1.1"
+    assert servers[0].vrf is None
+    assert servers[1].ip == "1.1.1.2"
+    assert servers[1].vrf == "Mgmt-vrf"
+    assert len(peers) == 1
+    assert peers[0].ip == "1.1.1.3"
+
+    yaml_out = generate_nac_yaml(device).content
+    assert 'ip: "1.1.1.1"' in yaml_out
+    assert 'ip: "1.1.1.2"' in yaml_out
+    assert 'vrf: "Mgmt-vrf"' in yaml_out
+    assert "peers:" in yaml_out
+    assert 'ip: "1.1.1.3"' in yaml_out
+
+    from app.generators.ios_cli import generate_ios_cli
+
+    regen = generate_ios_cli(device)
+    assert "ntp server 1.1.1.1" in regen
+    assert "ntp server 1.1.1.2 vrf Mgmt-vrf" in regen
+    assert "ntp peer 1.1.1.3" in regen
+
+
+def test_ntp_line_mappings():
+    from app.main import SyncRequest, sync
+
+    cli = """hostn R1
+ntp peer 1.1.1.1
+ntp server 1.1.1.2
+ntp server 1.1.1.3 vrf Myvrf"""
+    resp = sync(SyncRequest(cli_text=cli))
+    assert "ntp_line_mappings" in resp.features
+
+    peer_map = next(m for m in resp.mappings if m.field_key == "ntp.peers:1.1.1.1")
+    assert peer_map.cli_line == 2
+    assert peer_map.yaml_start_line <= peer_map.yaml_end_line
+
+    server_map = next(m for m in resp.mappings if m.field_key == "ntp.servers:1.1.1.2")
+    assert server_map.cli_line == 3
+
+    vrf_map = next(m for m in resp.mappings if m.field_key == "ntp.servers:1.1.1.3")
+    assert vrf_map.cli_line == 4
+    assert 'vrf: "Myvrf"' in resp.nac_yaml
 
 
 def test_nat_and_dhcp_pool():
@@ -895,3 +1005,102 @@ def test_services_no_phantom_resources():
     assert "network_number:" not in yaml_out
     assert "inside_source_interfaces:" not in yaml_out
     assert "new_model:" not in yaml_out
+    assert "ipsec_profiles:" not in yaml_out
+    assert "ikev2:" not in yaml_out
+
+
+def test_crypto_ikev2_ipsec_pki():
+    from app.main import SyncRequest, sync
+
+    cli = """crypto ikev2 proposal PROP1
+ encryption aes-cbc-256
+ integrity sha256
+ group 19
+!
+crypto ikev2 policy POL1
+ proposal PROP1
+ match fvrf VRF1
+!
+crypto ikev2 keyring KEY1
+ peer PEER1
+  address 192.168.1.1 255.255.255.0
+  pre-shared-key mykey123
+!
+crypto ikev2 profile PROF1
+ authentication local pre-share
+ authentication remote pre-share
+ keyring local KEY1
+ lifetime 28800
+!
+crypto ipsec transform-set TS1 esp-aes esp-sha256-hmac
+ mode tunnel
+!
+crypto ipsec profile IPSEC1
+ set transform-set TS1
+ set ikev2-profile PROF1
+ set pfs group19
+!
+crypto pki trustpoint TP1
+ enrollment terminal
+ rsakeypair KEY1
+ subject-name CN=router1
+ usage ike
+ revocation-check none
+"""
+    device = parse_cli(cli).device
+    crypto = device.configuration.crypto
+    assert crypto is not None
+    assert crypto.ikev2 is not None
+    assert crypto.ikev2.proposals[0].encryption == ["aes_cbc_256"]
+    assert crypto.ikev2.policies[0].match_fvrf == "VRF1"
+    assert crypto.ikev2.keyrings[0].peers[0].pre_shared_key == "mykey123"
+    assert crypto.ikev2.profiles[0].keyring_local == "KEY1"
+    assert crypto.ipsec_transform_sets[0].mode_tunnel is True
+    assert crypto.ipsec_profiles[0].set_ikev2_profile == "PROF1"
+    assert crypto.pki is not None
+    assert crypto.pki.trustpoints[0].usage == "ike"
+
+    yaml_out = generate_nac_yaml(device).content
+    assert "crypto:" in yaml_out
+    assert "ikev2:" in yaml_out
+    assert "aes_cbc_256" in yaml_out
+    assert "ipsec_profiles:" in yaml_out
+    assert "set_ikev2_profile: PROF1" in yaml_out or 'set_ikev2_profile: "PROF1"' in yaml_out
+    assert "pki:" in yaml_out
+    assert "trustpoints:" in yaml_out
+    assert "wire_crypto" in sync(SyncRequest(cli_text=cli)).features
+
+
+def test_crypto_line_mappings():
+    from app.main import sync
+    from app.main import SyncRequest
+
+    cli = """hostn R1
+crypto ikev2 proposal PROP1
+ encryption aes-cbc-256
+!
+crypto ikev2 profile PROF1
+ authentication local pre-share
+ keyring local KEY1
+!
+crypto ipsec transform-set TS1 esp-aes esp-sha256-hmac
+ mode tunnel
+!
+crypto ipsec profile IPSEC1
+ set transform-set TS1
+ set ikev2-profile PROF1
+"""
+    resp = sync(SyncRequest(cli_text=cli))
+    assert "crypto_line_mappings" in resp.features
+
+    keyring_map = next(m for m in resp.mappings if m.field_key == "crypto.ikev2.profiles:PROF1:keyring_local")
+    assert keyring_map.cli_line == 7
+    yaml_lines = resp.nac_yaml.splitlines()
+    assert "keyring_local:" in yaml_lines[keyring_map.yaml_start_line - 1]
+
+    enc_map = next(m for m in resp.mappings if m.field_key == "crypto.ikev2.proposals:PROP1:encryption")
+    assert enc_map.cli_line == 3
+
+    ipsec_map = next(m for m in resp.mappings if m.field_key == "crypto.ipsec_profiles:IPSEC1:set_ikev2_profile")
+    assert ipsec_map.cli_line == 14
+    assert keyring_map.yaml_start_line != ipsec_map.yaml_start_line

@@ -265,9 +265,18 @@ def generate_restconf_json(device: Device) -> str:
             ]
         native["snmp-server"] = snmp_native
     if config.ntp and not config.section_is_empty("ntp"):
-        native["ntp"] = {
-            "server": [{"ip-address": s.ip, "prefer": s.prefer} for s in config.ntp.servers]
-        }
+        ntp_native: dict[str, object] = {}
+        if config.ntp.servers:
+            ntp_native["server"] = [
+                {"ip-address": s.ip, "prefer": s.prefer, **({"vrf": s.vrf} if s.vrf else {})}
+                for s in config.ntp.servers
+            ]
+        if config.ntp.peers:
+            ntp_native["peer"] = [
+                {"ip-address": p.ip, "prefer": p.prefer, **({"vrf": p.vrf} if p.vrf else {})}
+                for p in config.ntp.peers
+            ]
+        native["ntp"] = ntp_native
     if config.dhcp and config.dhcp.enabled:
         native["service"] = {"dhcp": True}
     if config.dhcp_pools:

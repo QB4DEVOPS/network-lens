@@ -56,7 +56,7 @@ NAC_CONFIGURATION_SECTIONS: tuple[NacSection, ...] = (
     NacSection("udld", "type: udld enable"),
     NacSection("vtp", "type: vtp mode transparent"),
     NacSection("license", "type: license udi pid ..."),
-    NacSection("crypto", "type: crypto ikev2 ..."),
+    NacSection("crypto", "type: crypto ikev2 proposal ...", "NDO-185"),
     NacSection("flow", "type: flow exporter ..."),
     NacSection("evpn", "type: l2vpn evpn ...", "NDO-184"),
     NacSection("evpn_profile", "type: evpn profile ...", "NDO-184"),

@@ -192,7 +192,12 @@ def _services_lines(device: Device) -> list[str]:
     if ntp:
         for srv in ntp.servers:
             prefer = " prefer" if srv.prefer else ""
-            lines.append(f"ntp server {srv.ip}{prefer}")
+            vrf = f" vrf {srv.vrf}" if srv.vrf else ""
+            lines.append(f"ntp server {srv.ip}{vrf}{prefer}")
+        for peer in ntp.peers:
+            prefer = " prefer" if peer.prefer else ""
+            vrf = f" vrf {peer.vrf}" if peer.vrf else ""
+            lines.append(f"ntp peer {peer.ip}{vrf}{prefer}")
     if config.dhcp and config.dhcp.enabled:
         lines.append("service dhcp")
     for pool in config.dhcp_pools:

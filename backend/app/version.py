@@ -7,10 +7,15 @@ from pathlib import Path
 
 APP_DIR = Path(__file__).resolve().parent
 
-API_VERSION = "0.5.0"
+API_VERSION = "0.5.6"
 
 # Bump API_VERSION when response shape or behavior changes materially.
 FEATURES: list[str] = [
+    "hints_toggle",
+    "wire_crypto",
+    "crypto_line_mappings",
+    "aaa_line_mappings",
+    "ntp_line_mappings",
     "nac_full_schema",
     "schema_version_4",
     "wire_users",
@@ -34,9 +39,11 @@ _BUILD_SOURCES = (
     "nac_sections.py",
     "main.py",
     "parsers/ios_cli.py",
+    "parsers/crypto_cli.py",
     "generators/nac_yaml.py",
     "generators/terraform.py",
     "generators/restconf.py",
+    "sync/mappings.py",
 )
 
 

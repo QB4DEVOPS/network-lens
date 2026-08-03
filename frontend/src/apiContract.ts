@@ -68,3 +68,16 @@ export function validateSync(cliText: string, data: SyncPayload): string | null 
 
   return null;
 }
+
+export function mappingFeatureWarning(cliText: string, data: SyncPayload): string | null {
+  if (/^crypto /im.test(cliText) && !data.features?.includes("crypto_line_mappings")) {
+    return "Crypto highlight needs API 0.5.4+ — run backend\\scripts\\stop_api.ps1 then backend\\run.bat";
+  }
+  if (/^aaa /im.test(cliText) && !data.features?.includes("aaa_line_mappings")) {
+    return "AAA highlight needs API 0.5.5+ — run backend\\scripts\\stop_api.ps1 then backend\\run.bat";
+  }
+  if (/^ntp /im.test(cliText) && !data.features?.includes("ntp_line_mappings")) {
+    return "NTP highlight needs API 0.5.6+ — run backend\\scripts\\stop_api.ps1 then backend\\run.bat";
+  }
+  return null;
+}

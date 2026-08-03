@@ -2,6 +2,9 @@
 setlocal
 cd /d "%~dp0"
 
+echo Stopping stale API listeners (ports 8000-8005)...
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0backend\scripts\stop_api.ps1"
+
 echo Starting Network Lens backend...
 start "Network Lens API" cmd /k "cd /d %~dp0backend && run.bat"
 

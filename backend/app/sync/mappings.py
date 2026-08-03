@@ -10,6 +10,12 @@ def _specificity(field_key: str) -> int:
         return 3
     if field_key.startswith("interface:"):
         return 2
+    if field_key.startswith("crypto.") and ":" in field_key:
+        return 2 + field_key.count(":")
+    if field_key.startswith("aaa.") and ":" in field_key:
+        return 2 + field_key.count(":")
+    if field_key.startswith("ntp.") and ":" in field_key:
+        return 2
     return 1
 
 
