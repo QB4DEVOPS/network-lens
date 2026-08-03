@@ -38,8 +38,8 @@ def test_scaffold_never_blank():
     assert "devices:" in yaml_out
     assert "interfaces:" in yaml_out
     assert "Generated · Not applied" in yaml_out
-    assert "Schema version: 3.0.0" in yaml_out
-    assert "iosxe-devices-configuration-mvp" in yaml_out
+    assert "Schema version: 4.0.0" in yaml_out
+    assert "iosxe-devices-configuration-full" in yaml_out
     assert "netascode.cisco.com/docs/data_models/iosxe/overview/" in yaml_out
     assert "loopbacks:" not in yaml_out
 
@@ -378,3 +378,33 @@ def test_sync_includes_restconf_json():
     )
     assert "ietf-interfaces:interfaces" in resp.restconf_json
     assert "restconf_json_preview" in resp.features
+
+
+def test_full_schema_scaffold_hints():
+    """Empty CLI shows comment hints for unwired NaC sections (apply-safe)."""
+    from app.nac_sections import NAC_CONFIGURATION_SECTIONS
+
+    yaml_out = generate_nac_yaml(parse_cli("").device).content
+    assert "users:  # ← type: username admin secret" in yaml_out
+    assert "vrfs:  # ← type: vrf definition MGMT" in yaml_out
+    assert "aaa:  # ← type: aaa new-model" in yaml_out
+    assert "routing:" in yaml_out
+    assert "ospf_processes:  # ← type: router ospf 1" in yaml_out
+    assert "port_channels:  # ← type: int po1" in yaml_out
+    assert "loopbacks:" not in yaml_out
+    for section in NAC_CONFIGURATION_SECTIONS:
+        assert f"{section.key}:" in yaml_out or f"{section.key}:  #" in yaml_out
+
+
+def test_device_has_full_configuration_shape():
+    device = parse_cli("hostn R1").device
+    config = device.configuration
+    assert config.system.hostname == "R1"
+    assert hasattr(config, "users")
+    assert hasattr(config, "vrfs")
+    assert hasattr(config, "routing")
+    assert hasattr(config.interfaces, "port_channels")
+    assert device.system.hostname == "R1"
+    dumped = device.model_dump()
+    assert "configuration" in dumped
+    assert dumped["system"]["hostname"] == "R1"

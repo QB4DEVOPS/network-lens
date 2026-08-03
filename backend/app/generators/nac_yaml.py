@@ -1,14 +1,16 @@
-"""Live nac.yaml generator (iosxe-devices-configuration-mvp shape)."""
+"""Live nac.yaml generator (iosxe-devices-configuration-full shape)."""
 
 from __future__ import annotations
 
-from app.models import Device, Interface, NacYamlResult
+from collections.abc import Callable
 
-# Aligned with SAC lab nac_metadata.yaml and netascode IOS-XE data model
-SCHEMA_NAME = "iosxe-devices-configuration-mvp"
-SCHEMA_VERSION = "3.0.0"
+from app.models import Device, DeviceConfiguration, Interface, NacYamlResult
+from app.nac_sections import NAC_CONFIGURATION_SECTIONS, ROUTING_SUBSECTION_HINTS
+
+SCHEMA_NAME = "iosxe-devices-configuration-full"
+SCHEMA_VERSION = "4.0.0"
 CANONICAL_ROOT = "iosxe.devices[]"
-CONTRACT = "lean iosxe.devices[].configuration.*"
+CONTRACT = "iosxe.devices[].configuration.*"
 NETASCODE_DOCS = "https://netascode.cisco.com/docs/data_models/iosxe/overview/"
 NAC_MODULE = "netascode/nac-iosxe/iosxe 0.1.0"
 
@@ -20,7 +22,7 @@ SCAFFOLD_HEADER = f"""# Network Lens — Live NaC preview
 # Model docs: {NETASCODE_DOCS}
 # Module: {NAC_MODULE}
 # Generated · Not applied
-# Apply-safe: only interfaces you typed in CLI — no placeholder resources
+# Apply-safe: only resources you typed in CLI — no placeholder values
 
 """
 
@@ -54,6 +56,10 @@ def _yaml_null_hint(hint: str) -> str:
     return f"null  # ← {hint}"
 
 
+def _section_hint(hint: str) -> str:
+    return f"  # ← {hint}"
+
+
 def _iface_key(name: str, suffix: str | None = None) -> str:
     if suffix:
         return f"interface:{name}:{suffix}"
@@ -61,7 +67,6 @@ def _iface_key(name: str, suffix: str | None = None) -> str:
 
 
 def _format_ipv6_block(iface: Interface, indent: str) -> tuple[list[str], tuple[int, int] | None]:
-    """Emit ipv6 block only when the interface has IPv6 configuration."""
     if not iface.has_ipv6:
         return [], None
 
@@ -100,7 +105,6 @@ def _format_loopback(iface: Interface) -> tuple[list[str], dict[str, tuple[int, 
     lines: list[str] = []
     rel: dict[str, tuple[int, int]] = {}
     base = _iface_key(iface.name)
-
     lines.append(f"        - id: '{iface.loopback_id or '0'}'")
     block_start = 1
 
@@ -273,9 +277,136 @@ def _add_iface_block(
         builder.mark(key, start + rs - 1, start + re - 1)
 
 
+def _emit_system(builder: _YamlBuilder, config: DeviceConfiguration) -> None:
+    builder.append("      system:")
+    system = config.system
+    if system.hostname:
+        hn_line = builder.append(f"        hostname: {_yaml_str(system.hostname)}")
+        builder.mark("system.hostname", hn_line, hn_line)
+    else:
+        builder.append(f"        hostname: {_yaml_null_hint('type: hostn R1')}")
+
+    if system.ipv6_unicast_routing:
+        routing_line = builder.append("        ipv6_unicast_routing: true")
+        builder.mark("system.ipv6_unicast_routing", routing_line, routing_line)
+
+    if system.mtu is not None:
+        builder.append(f"        mtu: {system.mtu}")
+
+
+def _emit_routing(builder: _YamlBuilder, config: DeviceConfiguration) -> None:
+    routing = config.routing
+    has_static = bool(routing.static_routes)
+    has_other = bool(routing.ospf_processes or routing.bgp or routing.isis)
+
+    if not has_static and not has_other:
+        builder.append("      routing:")
+        for subsection in ROUTING_SUBSECTION_HINTS:
+            builder.append(f"        {subsection.key}:{_section_hint(subsection.hint)}")
+        return
+
+    builder.append("      routing:")
+    if has_static:
+        builder.append("        static_routes:")
+        for route in routing.static_routes:
+            plen = route.prefix if "/" in route.prefix else route.prefix
+            if route.prefix_length and "/" not in route.prefix:
+                plen = f"{route.prefix}/{route.prefix_length}"
+            builder.append(f"        - prefix: {_yaml_str(plen)}")
+            if route.next_hop:
+                builder.append(f"          next_hop: {_yaml_str(route.next_hop)}")
+
+    for subsection in ROUTING_SUBSECTION_HINTS:
+        if subsection.key == "static_routes":
+            continue
+        if subsection.key == "ospf_processes" and routing.ospf_processes:
+            continue
+        if subsection.key == "bgp" and routing.bgp:
+            continue
+        if subsection.key == "isis" and routing.isis:
+            continue
+        if not config.section_is_empty("routing") and has_static and not has_other:
+            builder.append(f"        {subsection.key}:{_section_hint(subsection.hint)}")
+
+
+def _emit_interfaces(builder: _YamlBuilder, config: DeviceConfiguration) -> None:
+    ifaces = config.interfaces
+    loopbacks = ifaces.loopbacks
+    ethernets = ifaces.ethernets
+    tunnels = ifaces.tunnels
+    vlans = ifaces.vlans
+    has_extra = bool(
+        ifaces.port_channels
+        or ifaces.port_channel_subinterfaces
+        or ifaces.ethernet_subinterfaces
+        or ifaces.bdis
+        or ifaces.nves
+    )
+
+    builder.append("      interfaces:")
+
+    if not loopbacks and not ethernets and not tunnels and not vlans and not has_extra:
+        builder.append("        # ← type: int lo0, int g0/0/0, int tun10, int vlan888")
+        builder.append("        port_channels:  # ← type: int po1")
+        builder.append("        port_channel_subinterfaces:  # ← type: int po1.100")
+        builder.append("        ethernet_subinterfaces:  # ← type: int g0/0/0.100")
+        builder.append("        bdis:  # ← type: int bdi100")
+        builder.append("        nves:  # ← type: int nve1")
+        return
+
+    if loopbacks:
+        builder.append("        loopbacks:")
+        for iface in sorted(loopbacks, key=lambda i: int(i.loopback_id or "0")):
+            block, rel = _format_loopback(iface)
+            _add_iface_block(builder, iface, block, rel)
+
+    if ethernets:
+        builder.append("        ethernets:")
+        for iface in ethernets:
+            block, rel = _format_ethernet(iface)
+            _add_iface_block(builder, iface, block, rel)
+
+    if vlans:
+        builder.append("        vlans:")
+        for iface in sorted(vlans, key=lambda i: int(i.vlan_id or "0")):
+            block, rel = _format_vlan(iface)
+            _add_iface_block(builder, iface, block, rel)
+
+    if tunnels:
+        builder.append("        tunnels:")
+        for iface in sorted(tunnels, key=lambda i: int(i.tunnel_id or "0")):
+            block, rel = _format_tunnel(iface)
+            _add_iface_block(builder, iface, block, rel)
+
+    for key, hint in (
+        ("port_channels", "type: int po1"),
+        ("port_channel_subinterfaces", "type: int po1.100"),
+        ("ethernet_subinterfaces", "type: int g0/0/0.100"),
+        ("bdis", "type: int bdi100"),
+        ("nves", "type: int nve1"),
+    ):
+        bucket = getattr(ifaces, key)
+        if bucket:
+            builder.append(f"        {key}:")
+            for iface in bucket:
+                block, rel = _format_ethernet(iface)
+                _add_iface_block(builder, iface, block, rel)
+        elif not has_extra:
+            builder.append(f"        {key}:  {_section_hint(hint)}")
+
+
+_SECTION_EMITTERS: dict[str, Callable[[_YamlBuilder, DeviceConfiguration], None]] = {
+    "system": _emit_system,
+    "routing": _emit_routing,
+    "interfaces": _emit_interfaces,
+}
+
+
 def generate_nac_yaml(device: Device) -> NacYamlResult:
     """Generate apply-safe nac.yaml with YAML line ranges for highlighting."""
     builder = _YamlBuilder(SCAFFOLD_HEADER)
+    config = device.configuration
+
     builder.append("iosxe:")
     builder.append("  devices:")
     builder.append(f"  - name: {device.name}")
@@ -284,62 +415,12 @@ def generate_nac_yaml(device: Device) -> NacYamlResult:
         builder.append(f"    host: {device.host}")
 
     builder.append("    configuration:")
-    builder.append("      system:")
 
-    if device.system.hostname:
-        hn_line = builder.append(f"        hostname: {_yaml_str(device.system.hostname)}")
-        builder.mark("system.hostname", hn_line, hn_line)
-    else:
-        builder.append(f"        hostname: {_yaml_null_hint('type: hostn R1')}")
-
-    if device.system.ipv6_unicast_routing:
-        routing_line = builder.append("        ipv6_unicast_routing: true")
-        builder.mark("system.ipv6_unicast_routing", routing_line, routing_line)
-
-    if device.static_routes:
-        builder.append("      routing:")
-        builder.append("        static_routes:")
-        for route in device.static_routes:
-            plen = route.prefix if "/" in route.prefix else route.prefix
-            if route.prefix_length and "/" not in route.prefix:
-                plen = f"{route.prefix}/{route.prefix_length}"
-            line = f"        - prefix: {_yaml_str(plen)}"
-            builder.append(line)
-            if route.next_hop:
-                builder.append(f"          next_hop: {_yaml_str(route.next_hop)}")
-
-    loopbacks = device.loopbacks
-    ethernets = device.ethernets
-    tunnels = device.tunnels
-    vlans = device.vlans
-
-    builder.append("      interfaces:")
-
-    if not loopbacks and not ethernets and not tunnels and not vlans:
-        builder.append("        # ← type: int lo0, int g0/0/0, int tun10, int vlan888")
-    else:
-        if loopbacks:
-            builder.append("        loopbacks:")
-            for iface in sorted(loopbacks, key=lambda i: int(i.loopback_id or "0")):
-                block, rel = _format_loopback(iface)
-                _add_iface_block(builder, iface, block, rel)
-
-        if ethernets:
-            builder.append("        ethernets:")
-            for iface in ethernets:
-                block, rel = _format_ethernet(iface)
-                _add_iface_block(builder, iface, block, rel)
-
-        if vlans:
-            builder.append("        vlans:")
-            for iface in sorted(vlans, key=lambda i: int(i.vlan_id or "0")):
-                block, rel = _format_vlan(iface)
-                _add_iface_block(builder, iface, block, rel)
-
-        if tunnels:
-            builder.append("        tunnels:")
-            for iface in sorted(tunnels, key=lambda i: int(i.tunnel_id or "0")):
-                block, rel = _format_tunnel(iface)
-                _add_iface_block(builder, iface, block, rel)
+    for section in NAC_CONFIGURATION_SECTIONS:
+        emitter = _SECTION_EMITTERS.get(section.key)
+        if emitter is not None:
+            emitter(builder, config)
+        elif config.section_is_empty(section.key):
+            builder.append(f"      {section.key}:{_section_hint(section.hint)}")
 
     return builder.build()

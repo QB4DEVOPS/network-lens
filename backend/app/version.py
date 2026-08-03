@@ -7,11 +7,12 @@ from pathlib import Path
 
 APP_DIR = Path(__file__).resolve().parent
 
-API_VERSION = "0.3.1"
+API_VERSION = "0.4.0"
 
 # Bump API_VERSION when response shape or behavior changes materially.
 FEATURES: list[str] = [
-    "schema_version_3",
+    "nac_full_schema",
+    "schema_version_4",
     "ipv6_interface_addresses",
     "ipv6_link_local_shorthand",
     "ipv6_unicast_routing",
@@ -24,6 +25,7 @@ FEATURES: list[str] = [
 _BUILD_SOURCES = (
     "version.py",
     "models.py",
+    "nac_sections.py",
     "main.py",
     "parsers/ios_cli.py",
     "generators/nac_yaml.py",
