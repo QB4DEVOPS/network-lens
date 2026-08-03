@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Editor, { OnMount } from "@monaco-editor/react";
 import type { editor as MonacoEditor } from "monaco-editor";
-import { validateBackend, validateSync, type BackendManifest } from "./apiContract";
+import { validateBackend, validateSync, mappingFeatureWarning, type BackendManifest } from "./apiContract";
 import { SplitPane } from "./SplitPane";
 
 const API_PORT = import.meta.env.VITE_API_PORT || "8000";
+const SHOW_HINTS_KEY = "network-lens-show-hints";
 
 const DEFAULT_CLI = `hostn R1
 int lo0
@@ -15,23 +16,15 @@ ipv6 address 2001:db8::1/64
 ipv6 address 2001:db8:1::1/64`;
 
 const INITIAL_NAC = `# Network Lens — Live NaC preview
-# Schema: iosxe-devices-configuration-mvp
-# Schema version: 3.0.0
-# Canonical root: iosxe.devices[]
-# Contract: lean iosxe.devices[].configuration.*
-# Model docs: https://netascode.cisco.com/docs/data_models/iosxe/overview/
-# Module: netascode/nac-iosxe/iosxe 0.1.0
-# Generated · Not applied
-# Apply-safe: only interfaces you typed in CLI — no placeholder resources
+# Schema: iosxe-devices-configuration-full
+# Schema version: 4.0.0
+# Scaffold hints: off — only typed CLI appears in YAML
 
 iosxe:
   devices:
   - name: iosv-01
     configuration:
-      system:
-        hostname: null  # ← type: hostn R1
       interfaces:
-        # ← type: int lo0, int g0/0/0, int tun10, int vlan888
 `;
 
 const INITIAL_HCL = `# Network Lens — Terraform preview
@@ -94,6 +87,12 @@ function mappingSpecificity(fieldKey: string): number {
   if (fieldKey.startsWith("interface:")) {
     return 2;
   }
+  if ((fieldKey.startsWith("crypto.") || fieldKey.startsWith("aaa.")) && fieldKey.includes(":")) {
+    return 2 + (fieldKey.match(/:/g)?.length ?? 0);
+  }
+  if (fieldKey.startsWith("ntp.") && fieldKey.includes(":")) {
+    return 2;
+  }
   return 1;
 }
 
@@ -153,7 +152,9 @@ export default function App() {
   const [cliContext, setCliContext] = useState<string | null>(null);
   const [backendInfo, setBackendInfo] = useState<BackendManifest | null>(null);
   const [backendIssue, setBackendIssue] = useState<string | null>(null);
+  const [mappingIssue, setMappingIssue] = useState<string | null>(null);
   const [status, setStatus] = useState<"idle" | "syncing" | "error">("idle");
+  const [showHints, setShowHints] = useState(() => localStorage.getItem(SHOW_HINTS_KEY) === "true");
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cliEditorRef = useRef<MonacoEditor.IStandaloneCodeEditor | null>(null);
@@ -282,13 +283,13 @@ export default function App() {
     outputFormat === "nac" ? nacYaml : outputFormat === "hcl" ? terraformHcl : restconfJson;
 
   const sync = useCallback(
-    async (text: string) => {
+    async (text: string, hints: boolean) => {
       setStatus("syncing");
       try {
         const res = await fetch("/sync", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ cli_text: text }),
+          body: JSON.stringify({ cli_text: text, show_hints: hints }),
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
@@ -301,6 +302,7 @@ export default function App() {
 
         const issue = validateSync(text, data);
         setBackendIssue(issue);
+        setMappingIssue(issue ? null : mappingFeatureWarning(text, data));
         if (issue) {
           setStatus("error");
           return;
@@ -333,6 +335,14 @@ export default function App() {
     [applyMapping, clearHighlights, outputFormat, updateCliContext],
   );
 
+  const toggleShowHints = useCallback(() => {
+    setShowHints((prev) => {
+      const next = !prev;
+      localStorage.setItem(SHOW_HINTS_KEY, String(next));
+      return next;
+    });
+  }, []);
+
   useEffect(() => {
     void (async () => {
       try {
@@ -350,11 +360,11 @@ export default function App() {
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => sync(cliText), 300);
+    debounceRef.current = setTimeout(() => sync(cliText, showHints), 300);
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  }, [cliText, sync]);
+  }, [cliText, showHints, sync]);
 
   return (
     <div className="app">
@@ -368,6 +378,15 @@ export default function App() {
           <span className="badge">Branch Lab</span>
           <span className="badge">Live NaC</span>
           <span className="badge accent">Generated · Not applied</span>
+          <button
+            type="button"
+            className={`hints-toggle${showHints ? " active" : ""}`}
+            onClick={toggleShowHints}
+            title="Show scaffold hints (# ← type: ...) for empty NaC sections"
+            aria-pressed={showHints}
+          >
+            Hints {showHints ? "on" : "off"}
+          </button>
           {cliContext ? (
             <span className="badge muted">↳ {cliContext}</span>
           ) : (
@@ -381,6 +400,7 @@ export default function App() {
           )}
           {status === "syncing" && <span className="badge muted">Syncing…</span>}
           {backendIssue && <span className="badge error">{backendIssue}</span>}
+          {mappingIssue && <span className="badge error">{mappingIssue}</span>}
           {!backendIssue && status === "error" && (
             <span className="badge error">Backend offline — run backend\run.bat (port {API_PORT})</span>
           )}

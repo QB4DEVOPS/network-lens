@@ -2,40 +2,540 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://network-lens.dev/schemas/canonical-device.json",
   "title": "Network Lens Canonical Device",
-  "description": "Vendor-neutral device intent aligned with iosxe.devices[]",
+  "description": "Vendor-neutral device intent aligned with iosxe.devices[].configuration.* (netascode/nac-iosxe/iosxe)",
   "type": "object",
-  "required": ["name", "system", "interfaces"],
+  "required": ["name", "configuration"],
   "properties": {
     "name": { "type": "string" },
     "host": { "type": ["string", "null"] },
-    "system": {
-      "type": "object",
-      "properties": {
-        "hostname": { "type": ["string", "null"] },
-        "ipv6_unicast_routing": { "type": "boolean" }
-      }
-    },
+    "secrets_redacted": { "type": "boolean" },
+    "configuration": { "$ref": "#/$defs/deviceConfiguration" },
+    "system": { "$ref": "#/$defs/deviceSystem", "description": "Legacy flat mirror of configuration.system" },
     "interfaces": {
       "type": "array",
-      "items": { "$ref": "#/$defs/interface" }
+      "items": { "$ref": "#/$defs/interface" },
+      "description": "Legacy flat list of all interface kinds"
     },
     "static_routes": {
       "type": "array",
-      "items": { "$ref": "#/$defs/staticRoute" }
+      "items": { "$ref": "#/$defs/staticRoute" },
+      "description": "Legacy flat mirror of configuration.routing.static_routes"
     }
   },
   "$defs": {
+    "deviceConfiguration": {
+      "type": "object",
+      "properties": {
+        "system": { "$ref": "#/$defs/deviceSystem" },
+        "users": { "type": "array", "items": { "$ref": "#/$defs/userAccount" } },
+        "banner": { "$ref": "#/$defs/bannerConfig" },
+        "clock": { "$ref": "#/$defs/clockConfig" },
+        "line": { "type": "object" },
+        "aaa": { "$ref": "#/$defs/aaaConfig" },
+        "access_lists": { "$ref": "#/$defs/accessListsConfig" },
+        "as_path_access_lists": { "type": "array", "items": { "$ref": "#/$defs/namedListEntry" } },
+        "community_lists": { "$ref": "#/$defs/communityListsConfig" },
+        "prefix_lists": { "type": "array", "items": { "$ref": "#/$defs/prefixList" } },
+        "route_maps": { "type": "array", "items": { "$ref": "#/$defs/routeMap" } },
+        "policy": { "type": "object" },
+        "class_maps": { "type": "array", "items": { "$ref": "#/$defs/namedListEntry" } },
+        "policy_maps": { "type": "array", "items": { "$ref": "#/$defs/namedListEntry" } },
+        "parameter_maps": { "type": "array", "items": { "$ref": "#/$defs/namedListEntry" } },
+        "key_chains": { "type": "array", "items": { "$ref": "#/$defs/namedListEntry" } },
+        "routing": { "$ref": "#/$defs/routingConfig" },
+        "vrfs": { "type": "array", "items": { "$ref": "#/$defs/vrf" } },
+        "interfaces": { "$ref": "#/$defs/deviceInterfaces" },
+        "vlan": { "type": "object" },
+        "templates": { "type": "array", "items": { "$ref": "#/$defs/namedListEntry" } },
+        "snmp_server": { "$ref": "#/$defs/snmpServerConfig" },
+        "ntp": { "$ref": "#/$defs/ntpConfig" },
+        "logging": { "type": "object" },
+        "dhcp": { "$ref": "#/$defs/dhcpConfig" },
+        "dhcp_pools": { "type": "array", "items": { "$ref": "#/$defs/dhcpPool" } },
+        "ipv6_dhcp_pools": { "type": "array", "items": { "$ref": "#/$defs/namedListEntry" } },
+        "nat": { "$ref": "#/$defs/natConfig" },
+        "bfd": { "type": "object" },
+        "cdp": { "type": "object" },
+        "lldp": { "type": "object" },
+        "spanning_tree": { "type": "object" },
+        "udld": { "type": "object" },
+        "vtp": { "type": "object" },
+        "license": { "type": "object" },
+        "crypto": { "type": "object" },
+        "flow": { "type": "object" },
+        "evpn": { "type": "object" },
+        "evpn_profile": { "type": "array", "items": { "$ref": "#/$defs/namedListEntry" } },
+        "mpls": { "type": "object" },
+        "pim": { "type": "object" },
+        "msdp": { "type": "object" },
+        "multicast": { "type": "object" },
+        "errdisable": { "type": "object" },
+        "dot1x": { "type": "object" },
+        "eem": { "type": "object" },
+        "cts": { "type": "object" },
+        "device_sensor": { "type": "object" },
+        "device_tracking": { "type": "object" },
+        "bridge_domain": { "type": "array" },
+        "l2_vfi": { "type": "array" },
+        "sla": { "type": "array" },
+        "mdt_subscription": { "type": "array" },
+        "zone_security": { "type": "array" },
+        "zone_pair_security": { "type": "array" },
+        "service": { "type": "object" },
+        "service_templates": { "type": "array", "items": { "$ref": "#/$defs/namedListEntry" } },
+        "arp": { "type": "object" },
+        "radius": { "type": "object" },
+        "tacacs_server": { "type": "object" }
+      }
+    },
+    "deviceSystem": {
+      "type": "object",
+      "properties": {
+        "hostname": { "type": ["string", "null"] },
+        "ipv6_unicast_routing": { "type": "boolean" },
+        "mtu": { "type": ["integer", "null"] },
+        "ip_routing": { "type": ["boolean", "null"] },
+        "ip_domain_name": { "type": ["string", "null"] },
+        "enable_secret": { "type": ["string", "null"] }
+      }
+    },
+    "userAccount": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string" },
+        "privilege": { "type": ["integer", "null"] },
+        "password": { "type": ["string", "null"] },
+        "password_type": { "type": ["string", "null"] },
+        "secret": { "type": ["string", "null"] },
+        "secret_type": { "type": ["string", "null"] }
+      }
+    },
+    "bannerConfig": {
+      "type": "object",
+      "properties": {
+        "exec": { "type": ["string", "null"] },
+        "login": { "type": ["string", "null"] },
+        "motd": { "type": ["string", "null"] },
+        "prompt_timeout": { "type": ["string", "null"] }
+      }
+    },
+    "clockConfig": {
+      "type": "object",
+      "properties": {
+        "timezone": { "type": ["string", "null"] },
+        "timezone_offset_hours": { "type": ["integer", "null"] },
+        "summer_time_zone": { "type": ["string", "null"] }
+      }
+    },
+    "accessListsConfig": {
+      "type": "object",
+      "properties": {
+        "standard": { "type": "array", "items": { "$ref": "#/$defs/standardAccessList" } },
+        "extended": { "type": "array", "items": { "$ref": "#/$defs/extendedAccessList" } },
+        "role_based": { "type": "array" }
+      }
+    },
+    "accessListAce": {
+      "type": "object",
+      "required": ["sequence", "action"],
+      "properties": {
+        "sequence": { "type": "integer" },
+        "action": { "type": "string" },
+        "prefix": { "type": ["string", "null"] },
+        "prefix_mask": { "type": ["string", "null"] },
+        "protocol": { "type": ["string", "null"] },
+        "source_any": { "type": ["boolean", "null"] },
+        "destination_any": { "type": ["boolean", "null"] }
+      }
+    },
+    "standardAccessList": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string" },
+        "entries": { "type": "array", "items": { "$ref": "#/$defs/accessListAce" } }
+      }
+    },
+    "extendedAccessList": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string" },
+        "entries": { "type": "array", "items": { "$ref": "#/$defs/accessListAce" } }
+      }
+    },
+    "communityListsConfig": {
+      "type": "object",
+      "properties": {
+        "standard": { "type": "array" },
+        "expanded": { "type": "array" }
+      }
+    },
+    "namedListEntry": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string" }
+      }
+    },
+    "prefixListSeq": {
+      "type": "object",
+      "required": ["seq"],
+      "properties": {
+        "seq": { "type": "integer" },
+        "action": { "type": ["string", "null"] },
+        "prefix": { "type": ["string", "null"] },
+        "greater_equal": { "type": ["integer", "null"] },
+        "less_equal": { "type": ["integer", "null"] }
+      }
+    },
+    "prefixList": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string" },
+        "description": { "type": ["string", "null"] },
+        "seqs": { "type": "array", "items": { "$ref": "#/$defs/prefixListSeq" } }
+      }
+    },
+    "routeMapMatch": {
+      "type": "object",
+      "properties": {
+        "ipv4_address_prefix_lists": { "type": "array", "items": { "type": "string" } },
+        "ipv4_address_access_lists": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "routeMapSet": {
+      "type": "object",
+      "properties": {
+        "local_preference": { "type": ["integer", "null"] },
+        "metric_value": { "type": ["integer", "null"] }
+      }
+    },
+    "routeMapEntry": {
+      "type": "object",
+      "required": ["seq"],
+      "properties": {
+        "seq": { "type": "integer" },
+        "operation": { "type": ["string", "null"] },
+        "description": { "type": ["string", "null"] },
+        "match": { "$ref": "#/$defs/routeMapMatch" },
+        "set": { "$ref": "#/$defs/routeMapSet" }
+      }
+    },
+    "routeMap": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string" },
+        "entries": { "type": "array", "items": { "$ref": "#/$defs/routeMapEntry" } }
+      }
+    },
+    "routingConfig": {
+      "type": "object",
+      "properties": {
+        "static_routes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/staticRoute" }
+        },
+        "ospf_processes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ospfProcess" }
+        },
+        "bgp": { "$ref": "#/$defs/bgpConfig" },
+        "isis": { "$ref": "#/$defs/isisConfig" }
+      }
+    },
+    "ospfNetwork": {
+      "type": "object",
+      "required": ["ip"],
+      "properties": {
+        "ip": { "type": "string" },
+        "wildcard": { "type": ["string", "null"] },
+        "area": { "type": ["string", "integer", "null"] }
+      }
+    },
+    "ospfPassiveInterface": {
+      "type": "object",
+      "properties": {
+        "interface_type": { "type": ["string", "null"] },
+        "interface_id": { "type": ["string", "null"] }
+      }
+    },
+    "ospfProcess": {
+      "type": "object",
+      "required": ["id"],
+      "properties": {
+        "id": { "type": ["integer", "string"] },
+        "router_id": { "type": ["string", "null"] },
+        "networks": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ospfNetwork" }
+        },
+        "passive_interface_default": { "type": ["boolean", "null"] },
+        "passive_interfaces": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ospfPassiveInterface" }
+        }
+      }
+    },
+    "bgpNeighbor": {
+      "type": "object",
+      "required": ["ip"],
+      "properties": {
+        "ip": { "type": "string" },
+        "remote_as": { "type": ["integer", "string", "null"] }
+      }
+    },
+    "bgpNetwork": {
+      "type": "object",
+      "required": ["network"],
+      "properties": {
+        "network": { "type": "string" },
+        "mask": { "type": ["string", "null"] }
+      }
+    },
+    "bgpAddressFamilyIpv4Unicast": {
+      "type": "object",
+      "properties": {
+        "networks": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/bgpNetwork" }
+        }
+      }
+    },
+    "bgpAddressFamily": {
+      "type": "object",
+      "properties": {
+        "ipv4_unicast": { "$ref": "#/$defs/bgpAddressFamilyIpv4Unicast" }
+      }
+    },
+    "bgpConfig": {
+      "type": "object",
+      "properties": {
+        "as_number": { "type": ["integer", "string", "null"] },
+        "neighbors": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/bgpNeighbor" }
+        },
+        "address_family": { "$ref": "#/$defs/bgpAddressFamily" }
+      }
+    },
+    "isisNet": {
+      "type": "object",
+      "required": ["tag"],
+      "properties": {
+        "tag": { "type": "string" }
+      }
+    },
+    "isisConfig": {
+      "type": "object",
+      "properties": {
+        "area_tag": { "type": ["string", "null"] },
+        "nets": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/isisNet" }
+        },
+        "is_type": { "type": ["string", "null"] }
+      }
+    },
+    "vrf": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string" },
+        "description": { "type": ["string", "null"] },
+        "route_distinguisher": { "type": ["string", "null"] },
+        "rd_auto": { "type": ["boolean", "null"] },
+        "address_family_ipv4": { "$ref": "#/$defs/vrfAddressFamily" },
+        "address_family_ipv6": { "$ref": "#/$defs/vrfAddressFamily" }
+      }
+    },
+    "vrfAddressFamily": {
+      "type": "object",
+      "properties": {
+        "enable": { "type": ["boolean", "null"] },
+        "import_route_targets": { "type": "array", "items": { "type": "string" } },
+        "export_route_targets": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "deviceInterfaces": {
+      "type": "object",
+      "properties": {
+        "loopbacks": { "type": "array", "items": { "$ref": "#/$defs/interface" } },
+        "ethernets": { "type": "array", "items": { "$ref": "#/$defs/interface" } },
+        "vlans": { "type": "array", "items": { "$ref": "#/$defs/interface" } },
+        "tunnels": { "type": "array", "items": { "$ref": "#/$defs/interface" } },
+        "port_channels": { "type": "array", "items": { "$ref": "#/$defs/interface" } },
+        "port_channel_subinterfaces": { "type": "array", "items": { "$ref": "#/$defs/interface" } },
+        "ethernet_subinterfaces": { "type": "array", "items": { "$ref": "#/$defs/interface" } },
+        "bdis": { "type": "array", "items": { "$ref": "#/$defs/interface" } },
+        "nves": { "type": "array", "items": { "$ref": "#/$defs/interface" } }
+      }
+    },
     "interface": {
       "type": "object",
       "required": ["name", "kind"],
       "properties": {
         "name": { "type": "string" },
-        "kind": { "enum": ["loopback", "ethernet", "tunnel", "vlan"] },
+        "kind": {
+          "enum": [
+            "loopback",
+            "ethernet",
+            "tunnel",
+            "vlan",
+            "port_channel",
+            "port_channel_subinterface",
+            "ethernet_subinterface",
+            "bdi",
+            "nve"
+          ]
+        },
         "shutdown": { "type": "boolean" },
         "description": { "type": ["string", "null"] },
+        "loopback_id": { "type": ["string", "null"] },
+        "ethernet_type": { "type": ["string", "null"] },
+        "ethernet_id": { "type": ["string", "null"] },
+        "tunnel_id": { "type": ["string", "null"] },
+        "vlan_id": { "type": ["string", "null"] },
+        "port_channel_id": { "type": ["string", "null"] },
+        "port_channel_mode": { "type": ["string", "null"] },
+        "subinterface_id": { "type": ["string", "null"] },
+        "bdi_id": { "type": ["string", "null"] },
+        "nve_id": { "type": ["string", "null"] },
         "ipv4_address": { "type": ["string", "null"] },
         "ipv4_address_mask": { "type": ["string", "null"] },
-        "ipv4_dhcp": { "type": "boolean" }
+        "ipv4_dhcp": { "type": "boolean" },
+        "vrf_forwarding": { "type": ["string", "null"] },
+        "nat_inside": { "type": "boolean" },
+        "nat_outside": { "type": "boolean" }
+      }
+    },
+    "aaaConfig": {
+      "type": "object",
+      "properties": {
+        "new_model": { "type": ["boolean", "null"] },
+        "authentication": { "$ref": "#/$defs/aaaAuthenticationConfig" },
+        "authorization": { "$ref": "#/$defs/aaaAuthorizationConfig" },
+        "accounting": { "$ref": "#/$defs/aaaAccountingConfig" }
+      }
+    },
+    "aaaAuthenticationConfig": {
+      "type": "object",
+      "properties": {
+        "logins": { "type": "array", "items": { "$ref": "#/$defs/aaaAuthLogin" } }
+      }
+    },
+    "aaaAuthLogin": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string" },
+        "methods": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "aaaAuthorizationConfig": {
+      "type": "object",
+      "properties": {
+        "execs": { "type": "array", "items": { "$ref": "#/$defs/aaaAuthzExec" } }
+      }
+    },
+    "aaaAuthzExec": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string" },
+        "methods": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "aaaAccountingConfig": {
+      "type": "object",
+      "properties": {
+        "execs": { "type": "array", "items": { "$ref": "#/$defs/aaaAccountingExec" } }
+      }
+    },
+    "aaaAccountingExec": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string" },
+        "action_type": { "type": ["string", "null"] },
+        "start_stop_groups": { "type": "array", "items": { "type": "string" } },
+        "stop_only_groups": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "snmpServerConfig": {
+      "type": "object",
+      "properties": {
+        "snmp_communities": { "type": "array", "items": { "$ref": "#/$defs/snmpCommunity" } },
+        "contact": { "type": ["string", "null"] },
+        "location": { "type": ["string", "null"] }
+      }
+    },
+    "snmpCommunity": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string" },
+        "permission": { "type": ["string", "null"] },
+        "encryption": { "type": ["string", "null"] }
+      }
+    },
+    "ntpConfig": {
+      "type": "object",
+      "properties": {
+        "servers": { "type": "array", "items": { "$ref": "#/$defs/ntpServer" } }
+      }
+    },
+    "ntpServer": {
+      "type": "object",
+      "required": ["ip"],
+      "properties": {
+        "ip": { "type": "string" },
+        "prefer": { "type": ["boolean", "null"] }
+      }
+    },
+    "dhcpConfig": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": ["boolean", "null"] }
+      }
+    },
+    "dhcpPool": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string" },
+        "network_number": { "type": ["string", "null"] },
+        "network_mask": { "type": ["string", "null"] },
+        "default_routers": { "type": "array", "items": { "type": "string" } },
+        "dns_servers": { "type": "array", "items": { "type": "string" } },
+        "domain_name": { "type": ["string", "null"] },
+        "lease_days": { "type": ["integer", "null"] }
+      }
+    },
+    "natConfig": {
+      "type": "object",
+      "properties": {
+        "inside_source_interfaces": { "type": "array", "items": { "$ref": "#/$defs/natInsideSource" } }
+      }
+    },
+    "natInsideSource": {
+      "type": "object",
+      "required": ["id"],
+      "properties": {
+        "id": { "type": "integer" },
+        "interfaces": { "type": "array", "items": { "$ref": "#/$defs/natInsideInterface" } }
+      }
+    },
+    "natInsideInterface": {
+      "type": "object",
+      "required": ["interface_type"],
+      "properties": {
+        "interface_type": { "type": "string" },
+        "interface_id": { "type": ["string", "null"] },
+        "overload": { "type": ["boolean", "null"] }
       }
     },
     "staticRoute": {
@@ -43,8 +543,12 @@
       "required": ["prefix"],
       "properties": {
         "prefix": { "type": "string" },
+        "prefix_length": { "type": ["integer", "null"] },
+        "mask": { "type": ["string", "null"] },
+        "vrf": { "type": ["string", "null"] },
         "next_hop": { "type": ["string", "null"] },
-        "interface": { "type": ["string", "null"] }
+        "interface": { "type": ["string", "null"] },
+        "next_hops": { "type": "array" }
       }
     }
   }

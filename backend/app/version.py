@@ -7,11 +7,23 @@ from pathlib import Path
 
 APP_DIR = Path(__file__).resolve().parent
 
-API_VERSION = "0.3.1"
+API_VERSION = "0.5.6"
 
 # Bump API_VERSION when response shape or behavior changes materially.
 FEATURES: list[str] = [
-    "schema_version_3",
+    "hints_toggle",
+    "wire_crypto",
+    "crypto_line_mappings",
+    "aaa_line_mappings",
+    "ntp_line_mappings",
+    "nac_full_schema",
+    "schema_version_4",
+    "wire_users",
+    "wire_system_banner_clock_mtu",
+    "wire_routing_ospf_bgp_isis",
+    "wire_vrfs_access_lists_policy",
+    "wire_aaa_snmp_ntp_nat_dhcp",
+    "wire_extended_interfaces",
     "ipv6_interface_addresses",
     "ipv6_link_local_shorthand",
     "ipv6_unicast_routing",
@@ -24,11 +36,14 @@ FEATURES: list[str] = [
 _BUILD_SOURCES = (
     "version.py",
     "models.py",
+    "nac_sections.py",
     "main.py",
     "parsers/ios_cli.py",
+    "parsers/crypto_cli.py",
     "generators/nac_yaml.py",
     "generators/terraform.py",
     "generators/restconf.py",
+    "sync/mappings.py",
 )
 
 

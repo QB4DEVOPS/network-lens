@@ -27,6 +27,7 @@ app.add_middleware(
 
 class SyncRequest(BaseModel):
     cli_text: str = ""
+    show_hints: bool = False
 
 
 class SyncResponse(BaseModel):
@@ -50,7 +51,7 @@ def health() -> dict[str, object]:
 @app.post("/sync", response_model=SyncResponse)
 def sync(request: SyncRequest) -> SyncResponse:
     parse_result = parse_cli(request.cli_text)
-    yaml_result = generate_nac_yaml(parse_result.device)
+    yaml_result = generate_nac_yaml(parse_result.device, show_hints=request.show_hints)
     mappings = build_line_mappings(parse_result, yaml_result)
     return SyncResponse(
         canonical=parse_result.device,

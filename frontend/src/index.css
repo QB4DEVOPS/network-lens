@@ -279,6 +279,29 @@ body.split-dragging .pane-editor {
   background: #264f3a;
 }
 
+.hints-toggle {
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.2rem 0.55rem;
+  border-radius: 4px;
+  border: 1px solid #3c3c3c;
+  background: #333;
+  color: #858585;
+  cursor: pointer;
+}
+
+.hints-toggle:hover {
+  color: #cccccc;
+  background: #3c3c3c;
+}
+
+.hints-toggle.active {
+  color: #4ec9b0;
+  background: #264f3a;
+  border-color: #3d7a5c;
+}
+
 .pane-label {
   font-size: 0.8rem;
   font-weight: 600;
