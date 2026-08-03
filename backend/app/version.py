@@ -7,12 +7,18 @@ from pathlib import Path
 
 APP_DIR = Path(__file__).resolve().parent
 
-API_VERSION = "0.4.0"
+API_VERSION = "0.5.0"
 
 # Bump API_VERSION when response shape or behavior changes materially.
 FEATURES: list[str] = [
     "nac_full_schema",
     "schema_version_4",
+    "wire_users",
+    "wire_system_banner_clock_mtu",
+    "wire_routing_ospf_bgp_isis",
+    "wire_vrfs_access_lists_policy",
+    "wire_aaa_snmp_ntp_nat_dhcp",
+    "wire_extended_interfaces",
     "ipv6_interface_addresses",
     "ipv6_link_local_shorthand",
     "ipv6_unicast_routing",

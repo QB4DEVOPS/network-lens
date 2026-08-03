@@ -101,6 +101,114 @@ def _format_ipv6_block(iface: Interface, indent: str) -> tuple[list[str], tuple[
     return lines, (start, len(lines))
 
 
+def _format_id_interface(
+    iface: Interface, id_value: str, indent_entry: str = "        "
+) -> tuple[list[str], dict[str, tuple[int, int]]]:
+    lines: list[str] = []
+    rel: dict[str, tuple[int, int]] = {}
+    base = _iface_key(iface.name)
+    block_start = 1
+
+    lines.append(f"{indent_entry}- id: '{id_value}'")
+
+    if iface.description:
+        desc_line = len(lines) + 1
+        lines.append(f"{indent_entry}  description: {_yaml_str(iface.description)}")
+        rel[f"{base}:description"] = (desc_line, desc_line)
+
+    ipv4_start = len(lines) + 1
+    lines.append(f"{indent_entry}  ipv4:")
+    if iface.ipv4_dhcp:
+        lines.append(f"{indent_entry}    address: dhcp")
+        lines.append(f"{indent_entry}    address_mask: null")
+    elif iface.ipv4_address:
+        lines.append(f"{indent_entry}    address: {_yaml_str(iface.ipv4_address)}")
+        mask = iface.ipv4_address_mask or "255.255.255.255"
+        lines.append(f"{indent_entry}    address_mask: {_yaml_str(mask)}")
+    else:
+        lines.append(f"{indent_entry}    address: {_yaml_null_hint('type: ip address ...')}")
+        lines.append(f"{indent_entry}    address_mask: null")
+    rel[f"{base}:ipv4"] = (ipv4_start, len(lines))
+
+    ipv6_lines, _ = _format_ipv6_block(iface, f"{indent_entry}  ")
+    if ipv6_lines:
+        ipv6_start = len(lines) + 1
+        lines.extend(ipv6_lines)
+        rel[f"{base}:ipv6"] = (ipv6_start, len(lines))
+
+    if not iface.shutdown:
+        sd_line = len(lines) + 1
+        lines.append(f"{indent_entry}  shutdown: false")
+        rel[f"{base}:shutdown"] = (sd_line, sd_line)
+
+    rel[base] = (block_start, len(lines))
+    return lines, rel
+
+
+def _format_port_channel(iface: Interface) -> tuple[list[str], dict[str, tuple[int, int]]]:
+    return _format_id_interface(iface, iface.port_channel_id or "0")
+
+
+def _format_port_channel_subinterface(iface: Interface) -> tuple[list[str], dict[str, tuple[int, int]]]:
+    pc_id = iface.port_channel_id or "0"
+    sub_id = iface.subinterface_id or "0"
+    return _format_id_interface(iface, f"{pc_id}.{sub_id}")
+
+
+def _format_ethernet_subinterface(iface: Interface) -> tuple[list[str], dict[str, tuple[int, int]]]:
+    lines: list[str] = []
+    rel: dict[str, tuple[int, int]] = {}
+    base = _iface_key(iface.name)
+    block_start = 1
+
+    etype = iface.ethernet_type or "GigabitEthernet"
+    eid = iface.ethernet_id or "0/0/0"
+    sub_id = iface.subinterface_id or "0"
+    lines.append(f"        - type: {etype}")
+    lines.append(f"          id: {eid}.{sub_id}")
+
+    if iface.description:
+        desc_line = len(lines) + 1
+        lines.append(f"          description: {_yaml_str(iface.description)}")
+        rel[f"{base}:description"] = (desc_line, desc_line)
+
+    ipv4_start = len(lines) + 1
+    lines.append("          ipv4:")
+    if iface.ipv4_dhcp:
+        lines.append("            address: dhcp")
+        lines.append("            address_mask: null")
+    elif iface.ipv4_address:
+        lines.append(f"            address: {_yaml_str(iface.ipv4_address)}")
+        mask = iface.ipv4_address_mask or "255.255.255.255"
+        lines.append(f"            address_mask: {_yaml_str(mask)}")
+    else:
+        lines.append(f"            address: {_yaml_null_hint('type: ip address ...')}")
+        lines.append("            address_mask: null")
+    rel[f"{base}:ipv4"] = (ipv4_start, len(lines))
+
+    ipv6_lines, _ = _format_ipv6_block(iface, "          ")
+    if ipv6_lines:
+        ipv6_start = len(lines) + 1
+        lines.extend(ipv6_lines)
+        rel[f"{base}:ipv6"] = (ipv6_start, len(lines))
+
+    if not iface.shutdown:
+        sd_line = len(lines) + 1
+        lines.append("          shutdown: false")
+        rel[f"{base}:shutdown"] = (sd_line, sd_line)
+
+    rel[base] = (block_start, len(lines))
+    return lines, rel
+
+
+def _format_bdi(iface: Interface) -> tuple[list[str], dict[str, tuple[int, int]]]:
+    return _format_id_interface(iface, iface.bdi_id or "0")
+
+
+def _format_nve(iface: Interface) -> tuple[list[str], dict[str, tuple[int, int]]]:
+    return _format_id_interface(iface, iface.nve_id or "0")
+
+
 def _format_loopback(iface: Interface) -> tuple[list[str], dict[str, tuple[int, int]]]:
     lines: list[str] = []
     rel: dict[str, tuple[int, int]] = {}
@@ -153,6 +261,16 @@ def _format_ethernet(iface: Interface) -> tuple[list[str], dict[str, tuple[int, 
         lines.append(f"          description: {_yaml_str(iface.description)}")
         rel[f"{base}:description"] = (desc_line, desc_line)
 
+    if iface.vrf_forwarding:
+        vrf_line = len(lines) + 1
+        lines.append(f"          vrf: {_yaml_str(iface.vrf_forwarding)}")
+        rel[f"{base}:vrf"] = (vrf_line, vrf_line)
+
+    if iface.nat_inside:
+        lines.append("          nat_inside: true")
+    if iface.nat_outside:
+        lines.append("          nat_outside: true")
+
     ipv4_start = len(lines) + 1
     lines.append("          ipv4:")
     if iface.ipv4_dhcp:
@@ -177,6 +295,15 @@ def _format_ethernet(iface: Interface) -> tuple[list[str], dict[str, tuple[int, 
         sd_line = len(lines) + 1
         lines.append("          shutdown: false")
         rel[f"{base}:shutdown"] = (sd_line, sd_line)
+
+    if iface.port_channel_id:
+        cg_line = len(lines) + 1
+        lines.append(f"          port_channel_id: '{iface.port_channel_id}'")
+        rel[f"{base}:channel_group"] = (cg_line, cg_line)
+        if iface.port_channel_mode:
+            mode_line = len(lines) + 1
+            lines.append(f"          port_channel_mode: {_yaml_str(iface.port_channel_mode)}")
+            rel[f"{base}:channel_group"] = (cg_line, mode_line)
 
     rel[base] = (block_start, len(lines))
     return lines, rel
@@ -231,6 +358,11 @@ def _format_vlan(iface: Interface) -> tuple[list[str], dict[str, tuple[int, int]
     block_start = 1
 
     lines.append(f"        - id: '{iface.vlan_id or '0'}'")
+
+    if iface.nat_inside:
+        lines.append("          nat_inside: true")
+    if iface.nat_outside:
+        lines.append("          nat_outside: true")
 
     if iface.description:
         desc_line = len(lines) + 1
@@ -291,7 +423,208 @@ def _emit_system(builder: _YamlBuilder, config: DeviceConfiguration) -> None:
         builder.mark("system.ipv6_unicast_routing", routing_line, routing_line)
 
     if system.mtu is not None:
-        builder.append(f"        mtu: {system.mtu}")
+        mtu_line = builder.append(f"        mtu: {system.mtu}")
+        builder.mark("system.mtu", mtu_line, mtu_line)
+
+    if system.ip_domain_name:
+        domain_line = builder.append(f"        ip_domain_name: {_yaml_str(system.ip_domain_name)}")
+        builder.mark("system.ip_domain_name", domain_line, domain_line)
+
+
+def _emit_users(builder: _YamlBuilder, config: DeviceConfiguration) -> None:
+    if config.users:
+        start = builder.append("      users:")
+        for user in config.users:
+            user_start = len(builder.lines) + 1
+            builder.append(f"        - name: {_yaml_str(user.name)}")
+            if user.privilege is not None:
+                builder.append(f"          privilege: {user.privilege}")
+            if user.secret is not None:
+                secret_line = builder.append(f"          secret: {_yaml_str(user.secret)}")
+                if user.secret_type:
+                    builder.append(f"          secret_type: {_yaml_str(user.secret_type)}")
+                builder.mark(f"users:{user.name}", user_start, secret_line)
+            elif user.password is not None:
+                pass_line = builder.append(f"          password: {_yaml_str(user.password)}")
+                if user.password_type:
+                    builder.append(f"          password_type: {_yaml_str(user.password_type)}")
+                builder.mark(f"users:{user.name}", user_start, pass_line)
+        builder.mark("users", start, len(builder.lines))
+    elif config.section_is_empty("users"):
+        builder.append(f"      users:{_section_hint('type: username admin secret ...')}")
+
+
+def _emit_banner(builder: _YamlBuilder, config: DeviceConfiguration) -> None:
+    banner = config.banner
+    if banner and not config.section_is_empty("banner"):
+        start = builder.append("      banner:")
+        if banner.motd:
+            motd_line = builder.append(f"        motd: {_yaml_str(banner.motd)}")
+            builder.mark("banner.motd", motd_line, motd_line)
+        if banner.login:
+            login_line = builder.append(f"        login: {_yaml_str(banner.login)}")
+            builder.mark("banner.login", login_line, login_line)
+        if banner.exec:
+            exec_line = builder.append(f"        exec: {_yaml_str(banner.exec)}")
+            builder.mark("banner.exec", exec_line, exec_line)
+        builder.mark("banner", start, len(builder.lines))
+    elif config.section_is_empty("banner"):
+        builder.append(f"      banner:{_section_hint('type: banner motd ^C...^C')}")
+
+
+def _emit_clock(builder: _YamlBuilder, config: DeviceConfiguration) -> None:
+    clock = config.clock
+    if clock and not config.section_is_empty("clock"):
+        start = builder.append("      clock:")
+        if clock.timezone:
+            tz_line = builder.append(f"        timezone: {_yaml_str(clock.timezone)}")
+            builder.mark("clock.timezone", tz_line, tz_line)
+        if clock.timezone_offset_hours is not None:
+            builder.append(f"        timezone_offset_hours: {clock.timezone_offset_hours}")
+        if clock.summer_time_zone:
+            builder.append(f"        summer_time_zone: {_yaml_str(clock.summer_time_zone)}")
+        builder.mark("clock", start, len(builder.lines))
+    elif config.section_is_empty("clock"):
+        builder.append(f"      clock:{_section_hint('type: clock timezone EST -5')}")
+
+
+def _emit_access_lists(builder: _YamlBuilder, config: DeviceConfiguration) -> None:
+    acls = config.access_lists
+    if acls is None or config.section_is_empty("access_lists"):
+        builder.append(f"      access_lists:{_section_hint('type: ip access-list standard ...')}")
+        return
+
+    builder.append("      access_lists:")
+    if acls.standard:
+        builder.append("        standard:")
+        for acl in acls.standard:
+            builder.append(f"        - name: {_yaml_str(acl.name)}")
+            if acl.entries:
+                builder.append("          entries:")
+                for entry in acl.entries:
+                    builder.append(f"          - sequence: {entry.sequence}")
+                    builder.append(f"            action: {entry.action}")
+                    if entry.prefix:
+                        builder.append(f"            prefix: {_yaml_str(entry.prefix)}")
+                    if entry.prefix_mask:
+                        builder.append(f"            prefix_mask: {_yaml_str(entry.prefix_mask)}")
+    if acls.extended:
+        builder.append("        extended:")
+        for acl in acls.extended:
+            builder.append(f"        - name: {_yaml_str(acl.name)}")
+            if acl.entries:
+                builder.append("          entries:")
+                for entry in acl.entries:
+                    builder.append(f"          - sequence: {entry.sequence}")
+                    builder.append(f"            action: {entry.action}")
+                    if entry.protocol:
+                        builder.append(f"            protocol: {entry.protocol}")
+                    if entry.source_any:
+                        builder.append("            source:")
+                        builder.append("              any: true")
+                    if entry.destination_any:
+                        builder.append("            destination:")
+                        builder.append("              any: true")
+
+
+def _emit_prefix_lists(builder: _YamlBuilder, config: DeviceConfiguration) -> None:
+    if config.section_is_empty("prefix_lists"):
+        builder.append(f"      prefix_lists:{_section_hint('type: ip prefix-list ...')}")
+        return
+
+    builder.append("      prefix_lists:")
+    for pl in config.prefix_lists:
+        builder.append(f"      - name: {_yaml_str(pl.name)}")
+        if pl.description:
+            builder.append(f"        description: {_yaml_str(pl.description)}")
+        if pl.seqs:
+            builder.append("        seqs:")
+            for seq in pl.seqs:
+                builder.append(f"        - seq: {seq.seq}")
+                if seq.action:
+                    builder.append(f"          action: {seq.action}")
+                if seq.prefix:
+                    builder.append(f"          prefix: {_yaml_str(seq.prefix)}")
+                if seq.greater_equal is not None:
+                    builder.append(f"          greater_equal: {seq.greater_equal}")
+                if seq.less_equal is not None:
+                    builder.append(f"          less_equal: {seq.less_equal}")
+
+
+def _emit_route_maps(builder: _YamlBuilder, config: DeviceConfiguration) -> None:
+    if config.section_is_empty("route_maps"):
+        builder.append(f"      route_maps:{_section_hint('type: route-map RM permit 10')}")
+        return
+
+    builder.append("      route_maps:")
+    for rm in config.route_maps:
+        builder.append(f"      - name: {_yaml_str(rm.name)}")
+        if rm.entries:
+            builder.append("        entries:")
+            for entry in rm.entries:
+                builder.append(f"        - seq: {entry.seq}")
+                if entry.operation:
+                    builder.append(f"          operation: {entry.operation}")
+                if entry.description:
+                    builder.append(f"          description: {_yaml_str(entry.description)}")
+                if entry.match and (
+                    entry.match.ipv4_address_prefix_lists or entry.match.ipv4_address_access_lists
+                ):
+                    builder.append("          match:")
+                    if entry.match.ipv4_address_prefix_lists:
+                        builder.append("            ipv4_address_prefix_lists:")
+                        for pl_name in entry.match.ipv4_address_prefix_lists:
+                            builder.append(f"            - {_yaml_str(pl_name)}")
+                    if entry.match.ipv4_address_access_lists:
+                        builder.append("            ipv4_address_access_lists:")
+                        for acl_name in entry.match.ipv4_address_access_lists:
+                            builder.append(f"            - {_yaml_str(acl_name)}")
+                if entry.set and (
+                    entry.set.local_preference is not None or entry.set.metric_value is not None
+                ):
+                    builder.append("          set:")
+                    if entry.set.local_preference is not None:
+                        builder.append(f"            local_preference: {entry.set.local_preference}")
+                    if entry.set.metric_value is not None:
+                        builder.append(f"            metric_value: {entry.set.metric_value}")
+
+
+def _emit_vrfs(builder: _YamlBuilder, config: DeviceConfiguration) -> None:
+    if config.section_is_empty("vrfs"):
+        builder.append(f"      vrfs:{_section_hint('type: vrf definition MGMT')}")
+        return
+
+    builder.append("      vrfs:")
+    for vrf in config.vrfs:
+        builder.append(f"      - name: {_yaml_str(vrf.name)}")
+        if vrf.description:
+            builder.append(f"        description: {_yaml_str(vrf.description)}")
+        if vrf.route_distinguisher:
+            builder.append(f"        route_distinguisher: {_yaml_str(vrf.route_distinguisher)}")
+        if vrf.address_family_ipv4 and (
+            vrf.address_family_ipv4.import_route_targets or vrf.address_family_ipv4.export_route_targets
+        ):
+            builder.append("        address_family_ipv4:")
+            if vrf.address_family_ipv4.import_route_targets:
+                builder.append("          import_route_targets:")
+                for rt in vrf.address_family_ipv4.import_route_targets:
+                    builder.append(f"          - {_yaml_str(rt)}")
+            if vrf.address_family_ipv4.export_route_targets:
+                builder.append("          export_route_targets:")
+                for rt in vrf.address_family_ipv4.export_route_targets:
+                    builder.append(f"          - {_yaml_str(rt)}")
+        if vrf.address_family_ipv6 and (
+            vrf.address_family_ipv6.import_route_targets or vrf.address_family_ipv6.export_route_targets
+        ):
+            builder.append("        address_family_ipv6:")
+            if vrf.address_family_ipv6.import_route_targets:
+                builder.append("          import_route_targets:")
+                for rt in vrf.address_family_ipv6.import_route_targets:
+                    builder.append(f"          - {_yaml_str(rt)}")
+            if vrf.address_family_ipv6.export_route_targets:
+                builder.append("          export_route_targets:")
+                for rt in vrf.address_family_ipv6.export_route_targets:
+                    builder.append(f"          - {_yaml_str(rt)}")
 
 
 def _emit_routing(builder: _YamlBuilder, config: DeviceConfiguration) -> None:
@@ -315,6 +648,76 @@ def _emit_routing(builder: _YamlBuilder, config: DeviceConfiguration) -> None:
             builder.append(f"        - prefix: {_yaml_str(plen)}")
             if route.next_hop:
                 builder.append(f"          next_hop: {_yaml_str(route.next_hop)}")
+
+    if routing.ospf_processes:
+        builder.append("        ospf_processes:")
+        for proc in routing.ospf_processes:
+            builder.append(f"        - id: {proc.id}")
+            if proc.router_id:
+                builder.append(f"          router_id: {_yaml_str(proc.router_id)}")
+            if proc.networks:
+                builder.append("          networks:")
+                for net in proc.networks:
+                    builder.append(f"          - ip: {_yaml_str(net.ip)}")
+                    if net.wildcard:
+                        builder.append(f"            wildcard: {_yaml_str(net.wildcard)}")
+                    if net.area is not None:
+                        builder.append(f"            area: {net.area}")
+            if proc.passive_interface_default:
+                builder.append("          passive_interface_default: true")
+            if proc.passive_interfaces:
+                builder.append("          passive_interfaces:")
+                for passive in proc.passive_interfaces:
+                    builder.append(
+                        f"          - interface_type: {_yaml_str(passive.interface_type or 'GigabitEthernet')}"
+                    )
+                    if passive.interface_id:
+                        builder.append(f"            interface_id: {_yaml_str(passive.interface_id)}")
+
+    if routing.bgp and (
+        routing.bgp.as_number is not None
+        or routing.bgp.neighbors
+        or (
+            routing.bgp.address_family
+            and routing.bgp.address_family.ipv4_unicast
+            and routing.bgp.address_family.ipv4_unicast.networks
+        )
+    ):
+        bgp = routing.bgp
+        builder.append("        bgp:")
+        if bgp.as_number is not None:
+            builder.append(f"          as_number: {bgp.as_number}")
+        if bgp.neighbors:
+            builder.append("          neighbors:")
+            for neighbor in bgp.neighbors:
+                builder.append(f"          - ip: {_yaml_str(neighbor.ip)}")
+                if neighbor.remote_as is not None:
+                    builder.append(f"            remote_as: {neighbor.remote_as}")
+        ipv4_nets = (
+            bgp.address_family.ipv4_unicast.networks
+            if bgp.address_family and bgp.address_family.ipv4_unicast
+            else []
+        )
+        if ipv4_nets:
+            builder.append("          address_family:")
+            builder.append("            ipv4_unicast:")
+            builder.append("              networks:")
+            for net in ipv4_nets:
+                builder.append(f"              - network: {_yaml_str(net.network)}")
+                if net.mask:
+                    builder.append(f"                mask: {_yaml_str(net.mask)}")
+
+    if routing.isis and (routing.isis.area_tag or routing.isis.nets or routing.isis.is_type):
+        isis = routing.isis
+        builder.append("        isis:")
+        if isis.area_tag:
+            builder.append(f"          area_tag: {_yaml_str(isis.area_tag)}")
+        if isis.nets:
+            builder.append("          nets:")
+            for net in isis.nets:
+                builder.append(f"          - tag: {_yaml_str(net.tag)}")
+        if isis.is_type:
+            builder.append(f"          is_type: {_yaml_str(isis.is_type)}")
 
     for subsection in ROUTING_SUBSECTION_HINTS:
         if subsection.key == "static_routes":
@@ -378,27 +781,179 @@ def _emit_interfaces(builder: _YamlBuilder, config: DeviceConfiguration) -> None
             block, rel = _format_tunnel(iface)
             _add_iface_block(builder, iface, block, rel)
 
-    for key, hint in (
-        ("port_channels", "type: int po1"),
-        ("port_channel_subinterfaces", "type: int po1.100"),
-        ("ethernet_subinterfaces", "type: int g0/0/0.100"),
-        ("bdis", "type: int bdi100"),
-        ("nves", "type: int nve1"),
+    for key, hint, formatter in (
+        ("port_channels", "type: int po1", _format_port_channel),
+        ("port_channel_subinterfaces", "type: int po1.100", _format_port_channel_subinterface),
+        ("ethernet_subinterfaces", "type: int g0/0/0.100", _format_ethernet_subinterface),
+        ("bdis", "type: int bdi100", _format_bdi),
+        ("nves", "type: int nve1", _format_nve),
     ):
         bucket = getattr(ifaces, key)
         if bucket:
             builder.append(f"        {key}:")
-            for iface in bucket:
-                block, rel = _format_ethernet(iface)
+            sort_key = {
+                "port_channels": lambda i: int(i.port_channel_id or "0"),
+                "port_channel_subinterfaces": lambda i: (
+                    int(i.port_channel_id or "0"),
+                    int(i.subinterface_id or "0"),
+                ),
+                "ethernet_subinterfaces": lambda i: i.name,
+                "bdis": lambda i: int(i.bdi_id or "0"),
+                "nves": lambda i: int(i.nve_id or "0"),
+            }.get(key, lambda i: i.name)
+            for iface in sorted(bucket, key=sort_key):
+                block, rel = formatter(iface)
                 _add_iface_block(builder, iface, block, rel)
         elif not has_extra:
             builder.append(f"        {key}:  {_section_hint(hint)}")
 
 
+
+
+def _emit_aaa(builder: _YamlBuilder, config: DeviceConfiguration) -> None:
+    aaa = config.aaa
+    if aaa and not config.section_is_empty("aaa"):
+        start = builder.append("      aaa:")
+        if aaa.new_model:
+            builder.append("        new_model: true")
+        if aaa.authentication and aaa.authentication.logins:
+            builder.append("        authentication:")
+            builder.append("          logins:")
+            for login in aaa.authentication.logins:
+                builder.append(f'          - name: {_yaml_str(login.name)}')
+                if login.methods:
+                    builder.append("            methods:")
+                    for method in login.methods:
+                        builder.append(f'            - {_yaml_str(method)}')
+        if aaa.authorization and aaa.authorization.execs:
+            builder.append("        authorization:")
+            builder.append("          execs:")
+            for authz in aaa.authorization.execs:
+                builder.append(f'          - name: {_yaml_str(authz.name)}')
+                if authz.methods:
+                    builder.append("            methods:")
+                    for method in authz.methods:
+                        builder.append(f'            - {_yaml_str(method)}')
+        if aaa.accounting and aaa.accounting.execs:
+            builder.append("        accounting:")
+            builder.append("          execs:")
+            for acct in aaa.accounting.execs:
+                builder.append(f'          - name: {_yaml_str(acct.name)}')
+                if acct.action_type:
+                    builder.append(f'            action_type: {_yaml_str(acct.action_type)}')
+                if acct.start_stop_groups:
+                    builder.append("            start_stop_groups:")
+                    for grp in acct.start_stop_groups:
+                        builder.append(f'            - {_yaml_str(grp)}')
+        builder.mark("aaa", start, len(builder.lines))
+    elif config.section_is_empty("aaa"):
+        builder.append(f"      aaa:{_section_hint('type: aaa new-model ...')}")
+
+
+def _emit_snmp_server(builder: _YamlBuilder, config: DeviceConfiguration) -> None:
+    snmp = config.snmp_server
+    if snmp and not config.section_is_empty("snmp_server"):
+        start = builder.append("      snmp_server:")
+        if snmp.snmp_communities:
+            builder.append("        snmp_communities:")
+            for comm in snmp.snmp_communities:
+                builder.append(f'        - name: {_yaml_str(comm.name)}')
+                if comm.permission:
+                    builder.append(f'          permission: {_yaml_str(comm.permission)}')
+        if snmp.contact:
+            builder.append(f"        contact: {_yaml_str(snmp.contact)}")
+        if snmp.location:
+            builder.append(f"        location: {_yaml_str(snmp.location)}")
+        builder.mark("snmp_server", start, len(builder.lines))
+    elif config.section_is_empty("snmp_server"):
+        builder.append(f"      snmp_server:{_section_hint('type: snmp-server community ...')}")
+
+
+def _emit_ntp(builder: _YamlBuilder, config: DeviceConfiguration) -> None:
+    ntp = config.ntp
+    if ntp and not config.section_is_empty("ntp"):
+        start = builder.append("      ntp:")
+        if ntp.servers:
+            builder.append("        servers:")
+            for srv in ntp.servers:
+                builder.append(f'        - ip: {_yaml_str(srv.ip)}')
+                if srv.prefer:
+                    builder.append("          prefer: true")
+        builder.mark("ntp", start, len(builder.lines))
+    elif config.section_is_empty("ntp"):
+        builder.append(f"      ntp:{_section_hint('type: ntp server 10.0.0.1')}")
+
+
+def _emit_dhcp(builder: _YamlBuilder, config: DeviceConfiguration) -> None:
+    dhcp = config.dhcp
+    if dhcp and not config.section_is_empty("dhcp"):
+        start = builder.append("      dhcp:")
+        if dhcp.enabled:
+            builder.append("        enabled: true")
+        builder.mark("dhcp", start, len(builder.lines))
+    elif config.section_is_empty("dhcp"):
+        builder.append(f"      dhcp:{_section_hint('type: ip dhcp ...')}")
+
+
+def _emit_dhcp_pools(builder: _YamlBuilder, config: DeviceConfiguration) -> None:
+    if config.dhcp_pools:
+        start = builder.append("      dhcp_pools:")
+        for pool in config.dhcp_pools:
+            builder.append(f'      - name: {_yaml_str(pool.name)}')
+            if pool.network_number:
+                builder.append(f'        network_number: {_yaml_str(pool.network_number)}')
+            if pool.network_mask:
+                builder.append(f'        network_mask: {_yaml_str(pool.network_mask)}')
+            if pool.default_routers:
+                builder.append("        default_routers:")
+                for router in pool.default_routers:
+                    builder.append(f'        - {_yaml_str(router)}')
+            if pool.dns_servers:
+                builder.append("        dns_servers:")
+                for dns in pool.dns_servers:
+                    builder.append(f'        - {_yaml_str(dns)}')
+        builder.mark("dhcp_pools", start, len(builder.lines))
+    elif config.section_is_empty("dhcp_pools"):
+        builder.append(f"      dhcp_pools:{_section_hint('type: ip dhcp pool LAN')}")
+
+
+def _emit_nat(builder: _YamlBuilder, config: DeviceConfiguration) -> None:
+    nat = config.nat
+    if nat and not config.section_is_empty("nat"):
+        start = builder.append("      nat:")
+        if nat.inside_source_interfaces:
+            builder.append("        inside_source_interfaces:")
+            for src in nat.inside_source_interfaces:
+                builder.append(f"        - id: {src.id}")
+                if src.interfaces:
+                    builder.append("          interfaces:")
+                    for iface in src.interfaces:
+                        builder.append(f'          - interface_type: {_yaml_str(iface.interface_type)}')
+                        if iface.interface_id:
+                            builder.append(f'            interface_id: {_yaml_str(iface.interface_id)}')
+                        if iface.overload:
+                            builder.append("            overload: true")
+        builder.mark("nat", start, len(builder.lines))
+    elif config.section_is_empty("nat"):
+        builder.append(f"      nat:{_section_hint('type: ip nat inside source ...')}")
+
 _SECTION_EMITTERS: dict[str, Callable[[_YamlBuilder, DeviceConfiguration], None]] = {
     "system": _emit_system,
+    "users": _emit_users,
+    "banner": _emit_banner,
+    "clock": _emit_clock,
+    "aaa": _emit_aaa,
+    "access_lists": _emit_access_lists,
+    "prefix_lists": _emit_prefix_lists,
+    "route_maps": _emit_route_maps,
     "routing": _emit_routing,
+    "vrfs": _emit_vrfs,
     "interfaces": _emit_interfaces,
+    "snmp_server": _emit_snmp_server,
+    "ntp": _emit_ntp,
+    "dhcp": _emit_dhcp,
+    "dhcp_pools": _emit_dhcp_pools,
+    "nat": _emit_nat,
 }
 
 

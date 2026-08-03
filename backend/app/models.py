@@ -75,6 +75,7 @@ class Interface(BaseModel):
     tunnel_id: str | None = None
     vlan_id: str | None = None
     port_channel_id: str | None = None
+    port_channel_mode: str | None = None
     subinterface_id: str | None = None
     bdi_id: str | None = None
     nve_id: str | None = None
@@ -88,6 +89,9 @@ class Interface(BaseModel):
     ipv6_autoconfig: bool = False
     ipv6_addresses: list[Ipv6Address] = Field(default_factory=list)
     ipv6_link_local_addresses: list[str] = Field(default_factory=list)
+    vrf_forwarding: str | None = None
+    nat_inside: bool = False
+    nat_outside: bool = False
 
     @property
     def has_ipv6(self) -> bool:
@@ -133,8 +137,61 @@ class LineConfig(BaseModel):
     model_config = {"extra": "allow"}
 
 
+class AaaAuthLogin(BaseModel):
+    name: str
+    methods: list[str] = Field(default_factory=list)
+
+
+class AaaAuthenticationConfig(BaseModel):
+    logins: list[AaaAuthLogin] = Field(default_factory=list)
+
+
+class AaaAuthzExec(BaseModel):
+    name: str
+    methods: list[str] = Field(default_factory=list)
+
+
+class AaaAuthorizationConfig(BaseModel):
+    execs: list[AaaAuthzExec] = Field(default_factory=list)
+
+
+class AaaAccountingExec(BaseModel):
+    name: str
+    action_type: str | None = None
+    start_stop_groups: list[str] = Field(default_factory=list)
+    stop_only_groups: list[str] = Field(default_factory=list)
+
+
+class AaaAccountingConfig(BaseModel):
+    execs: list[AaaAccountingExec] = Field(default_factory=list)
+
+
 class AaaConfig(BaseModel):
-    model_config = {"extra": "allow"}
+    new_model: bool | None = None
+    authentication: AaaAuthenticationConfig | None = None
+    authorization: AaaAuthorizationConfig | None = None
+    accounting: AaaAccountingConfig | None = None
+
+
+
+class AccessListAce(BaseModel):
+    sequence: int
+    action: str
+    prefix: str | None = None
+    prefix_mask: str | None = None
+    protocol: str | None = None
+    source_any: bool | None = None
+    destination_any: bool | None = None
+
+
+class StandardAccessList(BaseModel):
+    name: str
+    entries: list[AccessListAce] = Field(default_factory=list)
+
+
+class ExtendedAccessList(BaseModel):
+    name: str
+    entries: list[AccessListAce] = Field(default_factory=list)
 
 
 class AccessListEntry(BaseModel):
@@ -142,8 +199,8 @@ class AccessListEntry(BaseModel):
 
 
 class AccessListsConfig(BaseModel):
-    standard: list[AccessListEntry] = Field(default_factory=list)
-    extended: list[AccessListEntry] = Field(default_factory=list)
+    standard: list[StandardAccessList] = Field(default_factory=list)
+    extended: list[ExtendedAccessList] = Field(default_factory=list)
     role_based: list[AccessListEntry] = Field(default_factory=list)
 
 
@@ -157,14 +214,41 @@ class CommunityListsConfig(BaseModel):
     expanded: list[NamedListEntry] = Field(default_factory=list)
 
 
+class PrefixListSeq(BaseModel):
+    seq: int
+    action: str | None = None
+    prefix: str | None = None
+    greater_equal: int | None = None
+    less_equal: int | None = None
+
+
 class PrefixList(BaseModel):
     name: str
-    model_config = {"extra": "allow"}
+    description: str | None = None
+    seqs: list[PrefixListSeq] = Field(default_factory=list)
+
+
+class RouteMapMatch(BaseModel):
+    ipv4_address_prefix_lists: list[str] = Field(default_factory=list)
+    ipv4_address_access_lists: list[str] = Field(default_factory=list)
+
+
+class RouteMapSet(BaseModel):
+    local_preference: int | None = None
+    metric_value: int | None = None
+
+
+class RouteMapEntry(BaseModel):
+    seq: int
+    operation: str | None = None
+    description: str | None = None
+    match: RouteMapMatch | None = None
+    set: RouteMapSet | None = None
 
 
 class RouteMap(BaseModel):
     name: str
-    model_config = {"extra": "allow"}
+    entries: list[RouteMapEntry] = Field(default_factory=list)
 
 
 class PolicyConfig(BaseModel):
@@ -191,18 +275,59 @@ class KeyChain(BaseModel):
     model_config = {"extra": "allow"}
 
 
+class OspfNetwork(BaseModel):
+    ip: str
+    wildcard: str | None = None
+    area: str | int | None = None
+
+
+class OspfPassiveInterface(BaseModel):
+    interface_type: str | None = None
+    interface_id: str | None = None
+
+
 class OspfProcess(BaseModel):
     id: int | str
+    router_id: str | None = None
+    networks: list[OspfNetwork] = Field(default_factory=list)
+    passive_interface_default: bool | None = None
+    passive_interfaces: list[OspfPassiveInterface] = Field(default_factory=list)
     model_config = {"extra": "allow"}
+
+
+class BgpNeighbor(BaseModel):
+    ip: str
+    remote_as: int | str | None = None
+
+
+class BgpNetwork(BaseModel):
+    network: str
+    mask: str | None = None
+
+
+class BgpAddressFamilyIpv4Unicast(BaseModel):
+    networks: list[BgpNetwork] = Field(default_factory=list)
+
+
+class BgpAddressFamily(BaseModel):
+    ipv4_unicast: BgpAddressFamilyIpv4Unicast | None = None
 
 
 class BgpConfig(BaseModel):
     as_number: int | str | None = None
+    neighbors: list[BgpNeighbor] = Field(default_factory=list)
+    address_family: BgpAddressFamily | None = None
     model_config = {"extra": "allow"}
 
 
+class IsisNet(BaseModel):
+    tag: str
+
+
 class IsisConfig(BaseModel):
-    name: str | None = None
+    area_tag: str | None = None
+    nets: list[IsisNet] = Field(default_factory=list)
+    is_type: str | None = None
     model_config = {"extra": "allow"}
 
 
@@ -214,7 +339,9 @@ class RoutingConfig(BaseModel):
 
 
 class VrfAddressFamily(BaseModel):
-    model_config = {"extra": "allow"}
+    enable: bool | None = None
+    import_route_targets: list[str] = Field(default_factory=list)
+    export_route_targets: list[str] = Field(default_factory=list)
 
 
 class Vrf(BaseModel):
@@ -304,12 +431,26 @@ class InterfaceTemplate(BaseModel):
     model_config = {"extra": "allow"}
 
 
+class SnmpCommunity(BaseModel):
+    name: str
+    permission: str | None = None
+    encryption: str | None = None
+
+
 class SnmpServerConfig(BaseModel):
-    model_config = {"extra": "allow"}
+    snmp_communities: list[SnmpCommunity] = Field(default_factory=list)
+    contact: str | None = None
+    location: str | None = None
+
+
+class NtpServer(BaseModel):
+    ip: str
+    prefer: bool | None = None
 
 
 class NtpConfig(BaseModel):
-    model_config = {"extra": "allow"}
+    servers: list[NtpServer] = Field(default_factory=list)
+
 
 
 class LoggingConfig(BaseModel):
@@ -317,12 +458,18 @@ class LoggingConfig(BaseModel):
 
 
 class DhcpConfig(BaseModel):
-    model_config = {"extra": "allow"}
+    enabled: bool | None = None
 
 
 class DhcpPool(BaseModel):
     name: str
-    model_config = {"extra": "allow"}
+    network_number: str | None = None
+    network_mask: str | None = None
+    default_routers: list[str] = Field(default_factory=list)
+    dns_servers: list[str] = Field(default_factory=list)
+    domain_name: str | None = None
+    lease_days: int | None = None
+
 
 
 class Ipv6DhcpPool(BaseModel):
@@ -330,8 +477,20 @@ class Ipv6DhcpPool(BaseModel):
     model_config = {"extra": "allow"}
 
 
+class NatInsideInterface(BaseModel):
+    interface_type: str
+    interface_id: str | None = None
+    overload: bool | None = None
+
+
+class NatInsideSource(BaseModel):
+    id: int
+    interfaces: list[NatInsideInterface] = Field(default_factory=list)
+
+
 class NatConfig(BaseModel):
-    model_config = {"extra": "allow"}
+    inside_source_interfaces: list[NatInsideSource] = Field(default_factory=list)
+
 
 
 class BfdConfig(BaseModel):
