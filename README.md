@@ -150,3 +150,7 @@ Coverage checklist: [`docs/NAC_COVERAGE.md`](docs/NAC_COVERAGE.md)
 ## CI
 
 GitHub Actions (`.github/workflows/ci.yml`): backend pytest + smoke tests; frontend `npm ci` + build.
+
+## Maintainers
+
+Before updating the public GitHub mirror, run the checks in [`docs/PUBLIC_PUSH.md`](docs/PUBLIC_PUSH.md).

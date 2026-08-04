@@ -12,3 +12,6 @@ tmp_*.yaml
 *.tsbuildinfo
 frontend/vite.config.js
 frontend/vite.config.d.ts
+
+# Internal developer notes — never commit (see docs/PUBLIC_PUSH.md)
+README.internal.md
