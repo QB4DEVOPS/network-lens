@@ -576,6 +576,42 @@ interface GigabitEthernet0/0/0
     assert "MGMT" in payload
 
 
+def test_enable_secret_exact_in_yaml():
+    """Live preview shows exact enable secret (fidelity — same as NDO-172 users)."""
+    cli = "enable secret Cisco"
+    result = parse_cli(cli)
+    assert result.device.system.enable_secret == "Cisco"
+    assert result.device.system.enable_password is None
+    assert len(result.warnings) == 0
+    yaml_out = generate_nac_yaml(result.device).content
+    assert 'enable_secret: "Cisco"' in yaml_out
+    assert "enable_password" not in yaml_out
+    assert "REDACTED" not in yaml_out
+
+
+def test_enable_password_exact_in_yaml():
+    """enable password is distinct from enable secret in CLI and YAML."""
+    cli = "enable password Cisco"
+    result = parse_cli(cli)
+    assert result.device.system.enable_password == "Cisco"
+    assert result.device.system.enable_secret is None
+    assert len(result.warnings) == 0
+    yaml_out = generate_nac_yaml(result.device).content
+    assert 'enable_password: "Cisco"' in yaml_out
+    assert "enable_secret" not in yaml_out
+    assert "REDACTED" not in yaml_out
+
+
+def test_enable_password_typed_variant():
+    cli = "enable password 0 cleartext"
+    result = parse_cli(cli)
+    assert result.device.system.enable_password == "cleartext"
+    assert result.device.system.enable_password_type == "0"
+    yaml_out = generate_nac_yaml(result.device).content
+    assert 'enable_password: "cleartext"' in yaml_out
+    assert 'enable_password_type: "0"' in yaml_out
+
+
 def test_username_secret_exact_in_yaml():
     """NDO-172: live preview shows exact secret values (no redaction)."""
     cli = "username cisco privilege 15 secret cisco"

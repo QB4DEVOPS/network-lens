@@ -1,40 +1,53 @@
 # Network Lens
 
-**Live NaC first · Programmatically first**
+**Live NaC first · CLI-first onboarding for brownfield and greenfield**
 
-Type IOS-style CLI on the left, see live **nac.yaml** on the right (`iosxe.devices[]` shape).
+Type abbreviated IOS-style CLI on the left; see live **Cisco Network-as-Code YAML** on the right (`iosxe.devices[]` shape). Preview only — **Generated · Not applied** — nothing is pushed to a device.
 
-**Repo:** `sac-rohosfor-network-lens-labs-as-code`  
-**GitHub:** `https://wwwin-github.cisco.com/cx-usps-auto/sac-rohosfor-network-lens-labs-as-code`  
-**Local path:** `C:\dev\sac-rohosfor-network-lens-labs-as-code`
+**Repository:** [github.com/QB4DEVOPS/network-lens](https://github.com/QB4DEVOPS/network-lens)
 
-## Quick start (one command)
+## What it is
 
-From repo root:
+Network Lens is a dual-pane IDE for engineers moving from imperative IOS config to declarative NaC:
+
+| Mode | How you use it |
+|------|----------------|
+| **Greenfield** | Type or paste CLI snippets; learn the NaC data model as YAML appears |
+| **Brownfield** | Paste slices of existing config (same pipeline); bulk file import planned |
+
+Outputs include **NaC YAML**, **Terraform HCL**, and **RESTCONF JSON** previews, with line-level mapping between CLI and structured fields.
+
+Target contract: [netascode/terraform-iosxe-nac-iosxe](https://github.com/netascode/terraform-iosxe-nac-iosxe) · Schema docs: [Network as Code IOS-XE](https://netascode.cisco.com/docs/data_models/iosxe/overview/)
+
+## Quick start (Windows)
+
+From the repo root:
 
 ```powershell
 .\dev.bat
 ```
 
-This opens two windows: backend API + Vite frontend. Then open http://localhost:5173
+Opens the backend API and Vite frontend. Then visit **http://localhost:5173**.
 
-## Manual start
+### Manual start
 
-### Backend
+**Backend** (run first):
 
 ```powershell
 cd backend
 .\run.bat
 ```
 
-### Frontend
+**Frontend:**
 
 ```powershell
 cd frontend
 .\run.bat
 ```
 
-Always start **backend before** frontend. `run.bat` kills stale listeners, runs smoke tests, picks a free port, and writes `frontend\.env`.
+`run.bat` clears stale API listeners, runs smoke tests, picks a free port, and writes `frontend\.env`.
+
+On Linux or macOS, use the backend venv and run uvicorn/npm directly (see `backend/run.ps1` and `frontend/package.json` for the equivalent steps).
 
 ## Validate
 
@@ -42,18 +55,11 @@ Always start **backend before** frontend. `run.bat` kills stale listeners, runs 
 .\validate.bat
 ```
 
-Runs pytest + in-process smoke tests (+ live smoke if API is running).
+Runs backend pytest, smoke tests, and frontend build checks.
 
-## CI
+## Example — type left, learn right
 
-GitHub Actions workflow (`.github/workflows/ci.yml`) runs on push/PR:
-
-- Backend: `pytest` + smoke tests
-- Frontend: `npm ci` + `npm run build`
-
-## Example — type left, **learn right**
-
-Network Lens is a **live IDE preview** — not a bare YAML exporter. The right pane shows what you see in the app: schema contract, safety labels, and structured config filling in as you type.
+Network Lens is a **live IDE preview**, not a bare YAML exporter. The right pane shows schema contract, safety labels, and structured config filling in as you type.
 
 <table>
 <tr>
@@ -68,7 +74,8 @@ no sh
 ip add 10.0.0.1 255.255.255.255
 ipv6 enable
 ipv6 address 2001:db8::1/64
-ipv6 address 2001:db8:1::1/64
+enable password Cisco
+username admin privilege 15 secret cisco
 ```
 
 </td>
@@ -78,20 +85,22 @@ ipv6 address 2001:db8:1::1/64
 
 ```yaml
 # Network Lens — Live NaC preview
-# Schema: iosxe-devices-configuration-mvp
-# Schema version: 3.0.0
+# Schema: iosxe-devices-configuration-full
+# Schema version: 4.0.0
 # Canonical root: iosxe.devices[]
-# Contract: lean iosxe.devices[].configuration.*
-# Model docs: https://netascode.cisco.com/docs/data_models/iosxe/overview/
-# Module: netascode/nac-iosxe/iosxe 0.1.0
+# Contract: iosxe.devices[].configuration.*
 # Generated · Not applied
-# Apply-safe: only interfaces you typed in CLI — no placeholder resources
 iosxe:
   devices:
   - name: iosv-01
     configuration:
       system:
         hostname: "R1"
+        enable_password: "Cisco"
+      users:
+        - name: "admin"
+          privilege: 15
+          secret: "cisco"
       interfaces:
         loopbacks:
         - id: '0'
@@ -102,7 +111,6 @@ iosxe:
             enable: true
             addresses:
               - prefix: "2001:db8::1/64"
-              - prefix: "2001:db8:1::1/64"
           shutdown: false
 ```
 
@@ -110,18 +118,21 @@ iosxe:
 </tr>
 </table>
 
-The header lines are intentional — they teach **which schema**, **which contract**, and **Generated · Not applied** (preview only, no push to device). When you export to a real NaC repo, strip the preview header; in the IDE, keep it — that's the lesson happening live.
-CLI abbreviations (left pane only): `hostn`, `int`, `no sh`, `ip add`, `lo0`, `g0/0/0`.
+Preview headers are intentional: they teach **which schema**, **which contract**, and that output is **not applied**. Strip preview headers when exporting into a real NaC repo.
+
+CLI abbreviations (input only): `hostn`, `int`, `no sh`, `ip add`, `lo0`, `g0/0/0`.
 
 ## Architecture
 
 ```
-CLI input → parse_cli() → canonical Device model → generate_nac_yaml() → nac.yaml pane
+CLI input → parse_cli() → canonical Device → generate_nac_yaml() / terraform / restconf
 ```
 
-Canonical JSON Schema: `schemas/canonical-device.json`
+Canonical JSON Schema: [`schemas/canonical-device.json`](schemas/canonical-device.json)  
+Parser ↔ YAML line mapping: [`backend/app/field_keys.py`](backend/app/field_keys.py)  
+Coverage checklist: [`docs/NAC_COVERAGE.md`](docs/NAC_COVERAGE.md)
 
-## Package names
+## Packages
 
 | Context | Name |
 |---------|------|
@@ -130,4 +141,12 @@ Canonical JSON Schema: `schemas/canonical-device.json`
 | Python | `network-lens-backend` |
 | NaC contract | `netascode/nac-iosxe/iosxe` |
 
-Generated output is **Generated · Not applied** — no `terraform apply` in Phase 0.
+## Scope and safety
+
+- **Preview only** — no `terraform apply` or device push in this tool
+- **Growing coverage** — not full NaC parity; see coverage doc for wired vs scaffold sections
+- **Fidelity** — secrets and passwords appear verbatim in live preview (learning/migration aid; treat exports accordingly)
+
+## CI
+
+GitHub Actions (`.github/workflows/ci.yml`): backend pytest + smoke tests; frontend `npm ci` + build.

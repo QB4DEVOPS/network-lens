@@ -7,7 +7,7 @@ from pathlib import Path
 
 APP_DIR = Path(__file__).resolve().parent
 
-API_VERSION = "0.5.6"
+API_VERSION = "0.5.7"
 
 # Bump API_VERSION when response shape or behavior changes materially.
 FEATURES: list[str] = [
@@ -16,6 +16,7 @@ FEATURES: list[str] = [
     "crypto_line_mappings",
     "aaa_line_mappings",
     "ntp_line_mappings",
+    "field_key_registry",
     "nac_full_schema",
     "schema_version_4",
     "wire_users",
@@ -35,6 +36,7 @@ FEATURES: list[str] = [
 
 _BUILD_SOURCES = (
     "version.py",
+    "field_keys.py",
     "models.py",
     "nac_sections.py",
     "main.py",

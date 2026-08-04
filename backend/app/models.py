@@ -58,6 +58,9 @@ class DeviceSystem(BaseModel):
     ip_routing: bool | None = None
     ip_domain_name: str | None = None
     enable_secret: str | None = None
+    enable_secret_type: str | None = None
+    enable_password: str | None = None
+    enable_password_type: str | None = None
 
 
 class Ipv6Address(BaseModel):
@@ -822,7 +825,13 @@ class DeviceConfiguration(BaseModel):
             return len(value) == 0
         if isinstance(value, BaseModel):
             if isinstance(value, DeviceSystem):
-                return not (value.hostname or value.ipv6_unicast_routing or value.mtu)
+                return not (
+                    value.hostname
+                    or value.ipv6_unicast_routing
+                    or value.mtu
+                    or value.enable_secret
+                    or value.enable_password
+                )
             if isinstance(value, DeviceInterfaces):
                 return not value.all_flat()
             if isinstance(value, RoutingConfig):

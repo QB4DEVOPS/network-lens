@@ -96,7 +96,10 @@
         "mtu": { "type": ["integer", "null"] },
         "ip_routing": { "type": ["boolean", "null"] },
         "ip_domain_name": { "type": ["string", "null"] },
-        "enable_secret": { "type": ["string", "null"] }
+        "enable_secret": { "type": ["string", "null"] },
+        "enable_secret_type": { "type": ["string", "null"] },
+        "enable_password": { "type": ["string", "null"] },
+        "enable_password_type": { "type": ["string", "null"] }
       }
     },
     "userAccount": {

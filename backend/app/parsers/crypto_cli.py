@@ -4,6 +4,16 @@ from __future__ import annotations
 
 import re
 
+from app.field_keys import (
+    crypto_ikev2_global,
+    crypto_ipsec_profile_key,
+    crypto_keyring_key,
+    crypto_policy_key,
+    crypto_profile_key,
+    crypto_proposal_key,
+    crypto_transform_set_key,
+    crypto_trustpoint_key,
+)
 from app.models import (
     CliFieldRef,
     CryptoConfig,
@@ -49,41 +59,6 @@ _ESP_HMAC = {
     "esp-sha384-hmac": "esp-sha384-hmac",
     "esp-sha512-hmac": "esp-sha512-hmac",
 }
-
-
-def _proposal_key(name: str, field: str | None = None) -> str:
-    base = f"crypto.ikev2.proposals:{name}"
-    return f"{base}:{field}" if field else base
-
-
-def _policy_key(name: str, field: str | None = None) -> str:
-    base = f"crypto.ikev2.policies:{name}"
-    return f"{base}:{field}" if field else base
-
-
-def _keyring_key(name: str, field: str | None = None) -> str:
-    base = f"crypto.ikev2.keyrings:{name}"
-    return f"{base}:{field}" if field else base
-
-
-def _profile_key(name: str, field: str | None = None) -> str:
-    base = f"crypto.ikev2.profiles:{name}"
-    return f"{base}:{field}" if field else base
-
-
-def _transform_set_key(name: str, field: str | None = None) -> str:
-    base = f"crypto.ipsec_transform_sets:{name}"
-    return f"{base}:{field}" if field else base
-
-
-def _ipsec_profile_key(name: str, field: str | None = None) -> str:
-    base = f"crypto.ipsec_profiles:{name}"
-    return f"{base}:{field}" if field else base
-
-
-def _trustpoint_key(tp_id: str, field: str | None = None) -> str:
-    base = f"crypto.pki.trustpoints:{tp_id}"
-    return f"{base}:{field}" if field else base
 
 
 class CryptoParseState:
@@ -218,7 +193,7 @@ def parse_crypto_line(
         name = line.split(None, 3)[3].strip()
         state.proposal = CryptoIkev2Proposal(name=name)
         _ensure_ikev2(crypto).proposals.append(state.proposal)
-        cli_refs.append(CliFieldRef(cli_line=line_num, field_key=_proposal_key(name), label="crypto ikev2 proposal"))
+        cli_refs.append(CliFieldRef(cli_line=line_num, field_key=crypto_proposal_key(name), label="crypto ikev2 proposal"))
         return True
 
     if lower.startswith("crypto ikev2 policy "):
@@ -226,7 +201,7 @@ def parse_crypto_line(
         name = line.split(None, 3)[3].strip()
         state.policy = CryptoIkev2Policy(name=name)
         _ensure_ikev2(crypto).policies.append(state.policy)
-        cli_refs.append(CliFieldRef(cli_line=line_num, field_key=_policy_key(name), label="crypto ikev2 policy"))
+        cli_refs.append(CliFieldRef(cli_line=line_num, field_key=crypto_policy_key(name), label="crypto ikev2 policy"))
         return True
 
     if lower.startswith("crypto ikev2 keyring "):
@@ -234,7 +209,7 @@ def parse_crypto_line(
         name = line.split(None, 3)[3].strip()
         state.keyring = CryptoIkev2Keyring(name=name)
         _ensure_ikev2(crypto).keyrings.append(state.keyring)
-        cli_refs.append(CliFieldRef(cli_line=line_num, field_key=_keyring_key(name), label="crypto ikev2 keyring"))
+        cli_refs.append(CliFieldRef(cli_line=line_num, field_key=crypto_keyring_key(name), label="crypto ikev2 keyring"))
         return True
 
     if lower.startswith("crypto ikev2 profile "):
@@ -242,7 +217,7 @@ def parse_crypto_line(
         name = line.split(None, 3)[3].strip()
         state.profile = CryptoIkev2Profile(name=name)
         _ensure_ikev2(crypto).profiles.append(state.profile)
-        cli_refs.append(CliFieldRef(cli_line=line_num, field_key=_profile_key(name), label="crypto ikev2 profile"))
+        cli_refs.append(CliFieldRef(cli_line=line_num, field_key=crypto_profile_key(name), label="crypto ikev2 profile"))
         return True
 
     if lower.startswith("crypto ipsec transform-set "):
@@ -254,7 +229,7 @@ def parse_crypto_line(
             state.transform_set = CryptoIpsecTransformSet(name=name, esp=esp, esp_hmac=esp_hmac)
             crypto.ipsec_transform_sets.append(state.transform_set)
             cli_refs.append(
-                CliFieldRef(cli_line=line_num, field_key=_transform_set_key(name), label="crypto ipsec transform-set")
+                CliFieldRef(cli_line=line_num, field_key=crypto_transform_set_key(name), label="crypto ipsec transform-set")
             )
         return True
 
@@ -263,7 +238,7 @@ def parse_crypto_line(
         name = line.split(None, 3)[3].strip()
         state.ipsec_profile = CryptoIpsecProfile(name=name)
         crypto.ipsec_profiles.append(state.ipsec_profile)
-        cli_refs.append(CliFieldRef(cli_line=line_num, field_key=_ipsec_profile_key(name), label="crypto ipsec profile"))
+        cli_refs.append(CliFieldRef(cli_line=line_num, field_key=crypto_ipsec_profile_key(name), label="crypto ipsec profile"))
         return True
 
     if lower.startswith("crypto pki trustpoint "):
@@ -271,14 +246,14 @@ def parse_crypto_line(
         tp_id = line.split(None, 3)[3].strip()
         state.trustpoint = CryptoPkiTrustpoint(id=tp_id)
         _ensure_pki(crypto).trustpoints.append(state.trustpoint)
-        cli_refs.append(CliFieldRef(cli_line=line_num, field_key=_trustpoint_key(tp_id), label="crypto pki trustpoint"))
+        cli_refs.append(CliFieldRef(cli_line=line_num, field_key=crypto_trustpoint_key(tp_id), label="crypto pki trustpoint"))
         return True
 
     if lower.startswith("crypto ikev2 nat keepalive "):
         parts = line.split()
         if len(parts) >= 5 and parts[4].isdigit():
             _ensure_ikev2(crypto).nat_keepalive = int(parts[4])
-            cli_refs.append(CliFieldRef(cli_line=line_num, field_key="crypto.ikev2:nat_keepalive", label="crypto ikev2 nat keepalive"))
+            cli_refs.append(CliFieldRef(cli_line=line_num, field_key=crypto_ikev2_global("nat_keepalive"), label="crypto ikev2 nat keepalive"))
         return True
 
     if lower.startswith("crypto ikev2 dpd "):
@@ -290,7 +265,7 @@ def parse_crypto_line(
                 ike.dpd_retry = int(parts[4])
             if len(parts) >= 6 and parts[5].lower() in {"on-demand", "periodic"}:
                 ike.dpd_query = parts[5].lower()
-            cli_refs.append(CliFieldRef(cli_line=line_num, field_key="crypto.ikev2:dpd_interval", label="crypto ikev2 dpd"))
+            cli_refs.append(CliFieldRef(cli_line=line_num, field_key=crypto_ikev2_global("dpd_interval"), label="crypto ikev2 dpd"))
         return True
 
     # Nested IKEv2 proposal
@@ -298,19 +273,19 @@ def parse_crypto_line(
         pname = state.proposal.name
         if lower.startswith("encryption "):
             state.proposal.encryption = _map_tokens(line.split()[1:], _IKEV2_ENCRYPTION)
-            cli_refs.append(CliFieldRef(cli_line=line_num, field_key=_proposal_key(pname, "encryption"), label="encryption"))
+            cli_refs.append(CliFieldRef(cli_line=line_num, field_key=crypto_proposal_key(pname, "encryption"), label="encryption"))
             return True
         if lower.startswith("integrity "):
             state.proposal.integrity = _map_tokens(line.split()[1:], _IKEV2_INTEGRITY)
-            cli_refs.append(CliFieldRef(cli_line=line_num, field_key=_proposal_key(pname, "integrity"), label="integrity"))
+            cli_refs.append(CliFieldRef(cli_line=line_num, field_key=crypto_proposal_key(pname, "integrity"), label="integrity"))
             return True
         if lower.startswith("group "):
             state.proposal.group = _map_tokens(line.split()[1:], _IKEV2_GROUP)
-            cli_refs.append(CliFieldRef(cli_line=line_num, field_key=_proposal_key(pname, "group"), label="group"))
+            cli_refs.append(CliFieldRef(cli_line=line_num, field_key=crypto_proposal_key(pname, "group"), label="group"))
             return True
         if lower.startswith("prf "):
             state.proposal.prf = _map_tokens(line.split()[1:], _IKEV2_PRF)
-            cli_refs.append(CliFieldRef(cli_line=line_num, field_key=_proposal_key(pname, "prf"), label="prf"))
+            cli_refs.append(CliFieldRef(cli_line=line_num, field_key=crypto_proposal_key(pname, "prf"), label="prf"))
             return True
 
     # Nested IKEv2 policy
@@ -318,23 +293,23 @@ def parse_crypto_line(
         polname = state.policy.name
         if lower.startswith("proposal "):
             state.policy.proposals = line.split()[1:]
-            cli_refs.append(CliFieldRef(cli_line=line_num, field_key=_policy_key(polname, "proposals"), label="proposal"))
+            cli_refs.append(CliFieldRef(cli_line=line_num, field_key=crypto_policy_key(polname, "proposals"), label="proposal"))
             return True
         if lower.startswith("match fvrf "):
             state.policy.match_fvrf = line.split(None, 2)[2].strip()
-            cli_refs.append(CliFieldRef(cli_line=line_num, field_key=_policy_key(polname, "match_fvrf"), label="match fvrf"))
+            cli_refs.append(CliFieldRef(cli_line=line_num, field_key=crypto_policy_key(polname, "match_fvrf"), label="match fvrf"))
             return True
         if lower == "match fvrf any":
             state.policy.match_fvrf_any = True
-            cli_refs.append(CliFieldRef(cli_line=line_num, field_key=_policy_key(polname, "match_fvrf_any"), label="match fvrf any"))
+            cli_refs.append(CliFieldRef(cli_line=line_num, field_key=crypto_policy_key(polname, "match_fvrf_any"), label="match fvrf any"))
             return True
         if lower.startswith("match address local "):
             state.policy.match_address_local_ip = line.split()[3:]
-            cli_refs.append(CliFieldRef(cli_line=line_num, field_key=_policy_key(polname, "match_address_local_ip"), label="match address local"))
+            cli_refs.append(CliFieldRef(cli_line=line_num, field_key=crypto_policy_key(polname, "match_address_local_ip"), label="match address local"))
             return True
         if lower == "match inbound-only":
             state.policy.match_inbound_only = True
-            cli_refs.append(CliFieldRef(cli_line=line_num, field_key=_policy_key(polname, "match_inbound_only"), label="match inbound-only"))
+            cli_refs.append(CliFieldRef(cli_line=line_num, field_key=crypto_policy_key(polname, "match_inbound_only"), label="match inbound-only"))
             return True
 
     # Nested IKEv2 keyring peer
@@ -345,7 +320,7 @@ def parse_crypto_line(
             peer = CryptoIkev2KeyringPeer(name=peer_name)
             state.keyring.peers.append(peer)
             state.keyring_peer = peer
-            cli_refs.append(CliFieldRef(cli_line=line_num, field_key=_keyring_key(krname, f"peers:{peer_name}"), label="peer"))
+            cli_refs.append(CliFieldRef(cli_line=line_num, field_key=crypto_keyring_key(krname, f"peers:{peer_name}"), label="peer"))
             return True
         peer = state.keyring_peer
         if peer is not None:
@@ -358,7 +333,7 @@ def parse_crypto_line(
                     peer.ipv4_address = parts[1]
                 if len(parts) >= 3:
                     peer.ipv4_mask = parts[2]
-                cli_refs.append(CliFieldRef(cli_line=line_num, field_key=_keyring_key(krname, f"peers:{peer.name}"), label="address"))
+                cli_refs.append(CliFieldRef(cli_line=line_num, field_key=crypto_keyring_key(krname, f"peers:{peer.name}"), label="address"))
                 return True
             if lower.startswith("hostname "):
                 peer.hostname = line.split(None, 1)[1].strip()
@@ -377,7 +352,7 @@ def parse_crypto_line(
                 return True
             if lower.startswith("pre-shared-key "):
                 peer.pre_shared_key = line.split(None, 1)[1].strip()
-                cli_refs.append(CliFieldRef(cli_line=line_num, field_key=_keyring_key(krname, f"peers:{peer.name}"), label="pre-shared-key"))
+                cli_refs.append(CliFieldRef(cli_line=line_num, field_key=crypto_keyring_key(krname, f"peers:{peer.name}"), label="pre-shared-key"))
                 return True
 
     # Nested IKEv2 profile
@@ -388,11 +363,11 @@ def parse_crypto_line(
             return True
         if lower == "authentication local pre-share":
             state.profile.authentication_local_pre_share = True
-            cli_refs.append(CliFieldRef(cli_line=line_num, field_key=_profile_key(profname, "authentication_local_pre_share"), label="authentication local"))
+            cli_refs.append(CliFieldRef(cli_line=line_num, field_key=crypto_profile_key(profname, "authentication_local_pre_share"), label="authentication local"))
             return True
         if lower == "authentication remote pre-share":
             state.profile.authentication_remote_pre_share = True
-            cli_refs.append(CliFieldRef(cli_line=line_num, field_key=_profile_key(profname, "authentication_remote_pre_share"), label="authentication remote"))
+            cli_refs.append(CliFieldRef(cli_line=line_num, field_key=crypto_profile_key(profname, "authentication_remote_pre_share"), label="authentication remote"))
             return True
         if lower == "config-exchange request":
             state.profile.config_exchange_request = True
@@ -414,7 +389,7 @@ def parse_crypto_line(
             return True
         if lower.startswith("keyring local "):
             state.profile.keyring_local = line.split(None, 2)[2].strip()
-            cli_refs.append(CliFieldRef(cli_line=line_num, field_key=_profile_key(profname, "keyring_local"), label="keyring local"))
+            cli_refs.append(CliFieldRef(cli_line=line_num, field_key=crypto_profile_key(profname, "keyring_local"), label="keyring local"))
             return True
         if lower.startswith("lifetime "):
             parts = line.split()
@@ -431,7 +406,7 @@ def parse_crypto_line(
                 ips = line.split()[3:]
                 if ips:
                     state.profile.match_address_local_ip = ips[0]
-            cli_refs.append(CliFieldRef(cli_line=line_num, field_key=_profile_key(profname, "match_address_local_ip"), label="match address local"))
+            cli_refs.append(CliFieldRef(cli_line=line_num, field_key=crypto_profile_key(profname, "match_address_local_ip"), label="match address local"))
             return True
         if lower.startswith("match fvrf "):
             state.profile.match_fvrf = line.split(None, 2)[2].strip()
@@ -445,7 +420,7 @@ def parse_crypto_line(
                 state.profile.match_identity_remote_ipv4_addresses.append(
                     CryptoIkev2ProfileMatchRemoteIpv4(address=parts[4], mask=parts[5] if len(parts) > 5 else None)
                 )
-            cli_refs.append(CliFieldRef(cli_line=line_num, field_key=_profile_key(profname, "match_identity_remote_ipv4_addresses"), label="match identity remote"))
+            cli_refs.append(CliFieldRef(cli_line=line_num, field_key=crypto_profile_key(profname, "match_identity_remote_ipv4_addresses"), label="match identity remote"))
             return True
         if lower.startswith("match identity remote ipv6 "):
             state.profile.match_identity_remote_ipv6_prefixes.append(line.split(None, 4)[4].strip())
@@ -461,7 +436,7 @@ def parse_crypto_line(
     if state.transform_set is not None and lower == "mode tunnel":
         state.transform_set.mode_tunnel = True
         cli_refs.append(
-            CliFieldRef(cli_line=line_num, field_key=_transform_set_key(state.transform_set.name, "mode_tunnel"), label="mode tunnel")
+            CliFieldRef(cli_line=line_num, field_key=crypto_transform_set_key(state.transform_set.name, "mode_tunnel"), label="mode tunnel")
         )
         return True
 
@@ -470,11 +445,11 @@ def parse_crypto_line(
         ipname = state.ipsec_profile.name
         if lower.startswith("set transform-set "):
             state.ipsec_profile.set_transform_set = line.split()[2:]
-            cli_refs.append(CliFieldRef(cli_line=line_num, field_key=_ipsec_profile_key(ipname, "set_transform_set"), label="set transform-set"))
+            cli_refs.append(CliFieldRef(cli_line=line_num, field_key=crypto_ipsec_profile_key(ipname, "set_transform_set"), label="set transform-set"))
             return True
         if lower.startswith("set ikev2-profile "):
             state.ipsec_profile.set_ikev2_profile = line.split(None, 2)[2].strip()
-            cli_refs.append(CliFieldRef(cli_line=line_num, field_key=_ipsec_profile_key(ipname, "set_ikev2_profile"), label="set ikev2-profile"))
+            cli_refs.append(CliFieldRef(cli_line=line_num, field_key=crypto_ipsec_profile_key(ipname, "set_ikev2_profile"), label="set ikev2-profile"))
             return True
         if lower.startswith("set isakmp-profile "):
             state.ipsec_profile.set_isakmp_profile = line.split(None, 2)[2].strip()
@@ -495,21 +470,21 @@ def parse_crypto_line(
         tpid = state.trustpoint.id
         if lower == "enrollment terminal":
             state.trustpoint.enrollment_terminal = True
-            cli_refs.append(CliFieldRef(cli_line=line_num, field_key=_trustpoint_key(tpid, "enrollment_terminal"), label="enrollment terminal"))
+            cli_refs.append(CliFieldRef(cli_line=line_num, field_key=crypto_trustpoint_key(tpid, "enrollment_terminal"), label="enrollment terminal"))
             return True
         if lower == "enrollment selfsigned":
             state.trustpoint.enrollment_selfsigned = True
             return True
         if lower.startswith("rsakeypair "):
             state.trustpoint.rsakeypair = line.split(None, 1)[1].strip()
-            cli_refs.append(CliFieldRef(cli_line=line_num, field_key=_trustpoint_key(tpid, "rsakeypair"), label="rsakeypair"))
+            cli_refs.append(CliFieldRef(cli_line=line_num, field_key=crypto_trustpoint_key(tpid, "rsakeypair"), label="rsakeypair"))
             return True
         if lower.startswith("subject-name "):
             state.trustpoint.subject_name = line.split(None, 1)[1].strip()
             return True
         if lower.startswith("usage "):
             state.trustpoint.usage = line.split(None, 1)[1].strip()
-            cli_refs.append(CliFieldRef(cli_line=line_num, field_key=_trustpoint_key(tpid, "usage"), label="usage"))
+            cli_refs.append(CliFieldRef(cli_line=line_num, field_key=crypto_trustpoint_key(tpid, "usage"), label="usage"))
             return True
         if lower.startswith("revocation-check "):
             state.trustpoint.revocation_check = line.split()[1:]

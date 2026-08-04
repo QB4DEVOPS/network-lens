@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
+from app import field_keys as fk
 from app.models import (
     CryptoIkev2KeyringPeer,
     CryptoIkev2Profile,
@@ -72,62 +73,6 @@ def _section_hint(hint: str) -> str:
     return f"  # ← {hint}"
 
 
-def _iface_key(name: str, suffix: str | None = None) -> str:
-    if suffix:
-        return f"interface:{name}:{suffix}"
-    return f"interface:{name}"
-
-
-def _crypto_proposal_key(name: str, field: str | None = None) -> str:
-    base = f"crypto.ikev2.proposals:{name}"
-    return f"{base}:{field}" if field else base
-
-
-def _crypto_policy_key(name: str, field: str | None = None) -> str:
-    base = f"crypto.ikev2.policies:{name}"
-    return f"{base}:{field}" if field else base
-
-
-def _crypto_keyring_key(name: str, field: str | None = None) -> str:
-    base = f"crypto.ikev2.keyrings:{name}"
-    return f"{base}:{field}" if field else base
-
-
-def _crypto_profile_key(name: str, field: str | None = None) -> str:
-    base = f"crypto.ikev2.profiles:{name}"
-    return f"{base}:{field}" if field else base
-
-
-def _crypto_transform_set_key(name: str, field: str | None = None) -> str:
-    base = f"crypto.ipsec_transform_sets:{name}"
-    return f"{base}:{field}" if field else base
-
-
-def _crypto_ipsec_profile_key(name: str, field: str | None = None) -> str:
-    base = f"crypto.ipsec_profiles:{name}"
-    return f"{base}:{field}" if field else base
-
-
-def _crypto_trustpoint_key(tp_id: str, field: str | None = None) -> str:
-    base = f"crypto.pki.trustpoints:{tp_id}"
-    return f"{base}:{field}" if field else base
-
-
-def _aaa_login_key(name: str, field: str | None = None) -> str:
-    base = f"aaa.authentication.logins:{name}"
-    return f"{base}:{field}" if field else base
-
-
-def _aaa_authz_key(name: str, field: str | None = None) -> str:
-    base = f"aaa.authorization.execs:{name}"
-    return f"{base}:{field}" if field else base
-
-
-def _aaa_acct_key(name: str, field: str | None = None) -> str:
-    base = f"aaa.accounting.execs:{name}"
-    return f"{base}:{field}" if field else base
-
-
 def _format_ipv6_block(iface: Interface, indent: str) -> tuple[list[str], tuple[int, int] | None]:
     if not iface.has_ipv6:
         return [], None
@@ -172,7 +117,7 @@ def _format_id_interface(
 ) -> tuple[list[str], dict[str, tuple[int, int]]]:
     lines: list[str] = []
     rel: dict[str, tuple[int, int]] = {}
-    base = _iface_key(iface.name)
+    base = fk.interface_key(iface.name)
     block_start = 1
 
     lines.append(f"{indent_entry}- id: '{id_value}'")
@@ -231,7 +176,7 @@ def _format_ethernet_subinterface(
 ) -> tuple[list[str], dict[str, tuple[int, int]]]:
     lines: list[str] = []
     rel: dict[str, tuple[int, int]] = {}
-    base = _iface_key(iface.name)
+    base = fk.interface_key(iface.name)
     block_start = 1
 
     etype = iface.ethernet_type or "GigabitEthernet"
@@ -288,7 +233,7 @@ def _format_loopback(
 ) -> tuple[list[str], dict[str, tuple[int, int]]]:
     lines: list[str] = []
     rel: dict[str, tuple[int, int]] = {}
-    base = _iface_key(iface.name)
+    base = fk.interface_key(iface.name)
     lines.append(f"        - id: '{iface.loopback_id or '0'}'")
     block_start = 1
 
@@ -327,7 +272,7 @@ def _format_ethernet(
 ) -> tuple[list[str], dict[str, tuple[int, int]]]:
     lines: list[str] = []
     rel: dict[str, tuple[int, int]] = {}
-    base = _iface_key(iface.name)
+    base = fk.interface_key(iface.name)
     block_start = 1
 
     etype = iface.ethernet_type or "GigabitEthernet"
@@ -346,9 +291,13 @@ def _format_ethernet(
         rel[f"{base}:vrf"] = (vrf_line, vrf_line)
 
     if iface.nat_inside:
+        nat_line = len(lines) + 1
         lines.append("          nat_inside: true")
+        rel[f"{base}:nat_inside"] = (nat_line, nat_line)
     if iface.nat_outside:
+        nat_line = len(lines) + 1
         lines.append("          nat_outside: true")
+        rel[f"{base}:nat_outside"] = (nat_line, nat_line)
 
     if iface.ipv4_dhcp or iface.ipv4_address or show_hints:
         ipv4_start = len(lines) + 1
@@ -394,7 +343,7 @@ def _format_tunnel(
 ) -> tuple[list[str], dict[str, tuple[int, int]]]:
     lines: list[str] = []
     rel: dict[str, tuple[int, int]] = {}
-    base = _iface_key(iface.name)
+    base = fk.interface_key(iface.name)
     block_start = 1
 
     lines.append(f"        - id: '{iface.tunnel_id or '0'}'")
@@ -439,15 +388,19 @@ def _format_vlan(
 ) -> tuple[list[str], dict[str, tuple[int, int]]]:
     lines: list[str] = []
     rel: dict[str, tuple[int, int]] = {}
-    base = _iface_key(iface.name)
+    base = fk.interface_key(iface.name)
     block_start = 1
 
     lines.append(f"        - id: '{iface.vlan_id or '0'}'")
 
     if iface.nat_inside:
+        nat_line = len(lines) + 1
         lines.append("          nat_inside: true")
+        rel[f"{base}:nat_inside"] = (nat_line, nat_line)
     if iface.nat_outside:
+        nat_line = len(lines) + 1
         lines.append("          nat_outside: true")
+        rel[f"{base}:nat_outside"] = (nat_line, nat_line)
 
     if iface.description:
         desc_line = len(lines) + 1
@@ -490,6 +443,8 @@ def _system_has_content(system) -> bool:
         or system.ipv6_unicast_routing
         or system.mtu is not None
         or system.ip_domain_name
+        or system.enable_secret
+        or system.enable_password
     )
 
 
@@ -511,21 +466,33 @@ def _emit_system(builder: _YamlBuilder, config: DeviceConfiguration) -> None:
     builder.append("      system:")
     if system.hostname:
         hn_line = builder.append(f"        hostname: {_yaml_str(system.hostname)}")
-        builder.mark("system.hostname", hn_line, hn_line)
+        builder.mark(fk.system_hostname(), hn_line, hn_line)
     elif builder.show_hints:
         builder.hint_line(f"        hostname: {_yaml_null_hint('type: hostn R1')}")
 
     if system.ipv6_unicast_routing:
         routing_line = builder.append("        ipv6_unicast_routing: true")
-        builder.mark("system.ipv6_unicast_routing", routing_line, routing_line)
+        builder.mark(fk.system_ipv6_unicast_routing(), routing_line, routing_line)
 
     if system.mtu is not None:
         mtu_line = builder.append(f"        mtu: {system.mtu}")
-        builder.mark("system.mtu", mtu_line, mtu_line)
+        builder.mark(fk.system_mtu(), mtu_line, mtu_line)
 
     if system.ip_domain_name:
         domain_line = builder.append(f"        ip_domain_name: {_yaml_str(system.ip_domain_name)}")
-        builder.mark("system.ip_domain_name", domain_line, domain_line)
+        builder.mark(fk.system_ip_domain_name(), domain_line, domain_line)
+
+    if system.enable_secret:
+        secret_line = builder.append(f"        enable_secret: {_yaml_str(system.enable_secret)}")
+        if system.enable_secret_type:
+            builder.append(f"        enable_secret_type: {_yaml_str(system.enable_secret_type)}")
+        builder.mark(fk.system_enable_secret(), secret_line, secret_line)
+
+    if system.enable_password:
+        pass_line = builder.append(f"        enable_password: {_yaml_str(system.enable_password)}")
+        if system.enable_password_type:
+            builder.append(f"        enable_password_type: {_yaml_str(system.enable_password_type)}")
+        builder.mark(fk.system_enable_password(), pass_line, pass_line)
 
 
 def _emit_users(builder: _YamlBuilder, config: DeviceConfiguration) -> None:
@@ -540,13 +507,13 @@ def _emit_users(builder: _YamlBuilder, config: DeviceConfiguration) -> None:
                 secret_line = builder.append(f"          secret: {_yaml_str(user.secret)}")
                 if user.secret_type:
                     builder.append(f"          secret_type: {_yaml_str(user.secret_type)}")
-                builder.mark(f"users:{user.name}", user_start, secret_line)
+                builder.mark(fk.user_key(user.name), user_start, secret_line)
             elif user.password is not None:
                 pass_line = builder.append(f"          password: {_yaml_str(user.password)}")
                 if user.password_type:
                     builder.append(f"          password_type: {_yaml_str(user.password_type)}")
-                builder.mark(f"users:{user.name}", user_start, pass_line)
-        builder.mark("users", start, len(builder.lines))
+                builder.mark(fk.user_key(user.name), user_start, pass_line)
+        builder.mark(fk.users_section(), start, len(builder.lines))
     elif config.section_is_empty("users"):
         builder.hint_line(f"      users:{_section_hint('type: username admin secret ...')}")
 
@@ -557,14 +524,14 @@ def _emit_banner(builder: _YamlBuilder, config: DeviceConfiguration) -> None:
         start = builder.append("      banner:")
         if banner.motd:
             motd_line = builder.append(f"        motd: {_yaml_str(banner.motd)}")
-            builder.mark("banner.motd", motd_line, motd_line)
+            builder.mark(fk.banner_key("motd"), motd_line, motd_line)
         if banner.login:
             login_line = builder.append(f"        login: {_yaml_str(banner.login)}")
-            builder.mark("banner.login", login_line, login_line)
+            builder.mark(fk.banner_key("login"), login_line, login_line)
         if banner.exec:
             exec_line = builder.append(f"        exec: {_yaml_str(banner.exec)}")
-            builder.mark("banner.exec", exec_line, exec_line)
-        builder.mark("banner", start, len(builder.lines))
+            builder.mark(fk.banner_key("exec"), exec_line, exec_line)
+        builder.mark(fk.banner_section(), start, len(builder.lines))
     elif config.section_is_empty("banner"):
         builder.hint_line(f"      banner:{_section_hint('type: banner motd ^C...^C')}")
 
@@ -575,12 +542,12 @@ def _emit_clock(builder: _YamlBuilder, config: DeviceConfiguration) -> None:
         start = builder.append("      clock:")
         if clock.timezone:
             tz_line = builder.append(f"        timezone: {_yaml_str(clock.timezone)}")
-            builder.mark("clock.timezone", tz_line, tz_line)
+            builder.mark(fk.clock_timezone(), tz_line, tz_line)
         if clock.timezone_offset_hours is not None:
             builder.append(f"        timezone_offset_hours: {clock.timezone_offset_hours}")
         if clock.summer_time_zone:
             builder.append(f"        summer_time_zone: {_yaml_str(clock.summer_time_zone)}")
-        builder.mark("clock", start, len(builder.lines))
+        builder.mark(fk.clock_section(), start, len(builder.lines))
     elif config.section_is_empty("clock"):
         builder.hint_line(f"      clock:{_section_hint('type: clock timezone EST -5')}")
 
@@ -595,9 +562,10 @@ def _emit_access_lists(builder: _YamlBuilder, config: DeviceConfiguration) -> No
     if acls.standard:
         builder.append("        standard:")
         for acl in acls.standard:
+            acl_start = len(builder.lines) + 1
             builder.append(f"        - name: {_yaml_str(acl.name)}")
             if acl.entries:
-                builder.append("          entries:")
+                entries_start = builder.append("          entries:")
                 for entry in acl.entries:
                     builder.append(f"          - sequence: {entry.sequence}")
                     builder.append(f"            action: {entry.action}")
@@ -605,12 +573,15 @@ def _emit_access_lists(builder: _YamlBuilder, config: DeviceConfiguration) -> No
                         builder.append(f"            prefix: {_yaml_str(entry.prefix)}")
                     if entry.prefix_mask:
                         builder.append(f"            prefix_mask: {_yaml_str(entry.prefix_mask)}")
+                builder.mark(fk.access_list_standard_key(acl.name, "entries"), entries_start, len(builder.lines))
+            builder.mark(fk.access_list_standard_key(acl.name), acl_start, len(builder.lines))
     if acls.extended:
         builder.append("        extended:")
         for acl in acls.extended:
+            acl_start = len(builder.lines) + 1
             builder.append(f"        - name: {_yaml_str(acl.name)}")
             if acl.entries:
-                builder.append("          entries:")
+                entries_start = builder.append("          entries:")
                 for entry in acl.entries:
                     builder.append(f"          - sequence: {entry.sequence}")
                     builder.append(f"            action: {entry.action}")
@@ -622,6 +593,8 @@ def _emit_access_lists(builder: _YamlBuilder, config: DeviceConfiguration) -> No
                     if entry.destination_any:
                         builder.append("            destination:")
                         builder.append("              any: true")
+                builder.mark(fk.access_list_extended_key(acl.name, "entries"), entries_start, len(builder.lines))
+            builder.mark(fk.access_list_extended_key(acl.name), acl_start, len(builder.lines))
 
 
 def _emit_prefix_lists(builder: _YamlBuilder, config: DeviceConfiguration) -> None:
@@ -631,6 +604,7 @@ def _emit_prefix_lists(builder: _YamlBuilder, config: DeviceConfiguration) -> No
 
     builder.append("      prefix_lists:")
     for pl in config.prefix_lists:
+        pl_start = len(builder.lines) + 1
         builder.append(f"      - name: {_yaml_str(pl.name)}")
         if pl.description:
             builder.append(f"        description: {_yaml_str(pl.description)}")
@@ -646,6 +620,7 @@ def _emit_prefix_lists(builder: _YamlBuilder, config: DeviceConfiguration) -> No
                     builder.append(f"          greater_equal: {seq.greater_equal}")
                 if seq.less_equal is not None:
                     builder.append(f"          less_equal: {seq.less_equal}")
+        builder.mark(fk.prefix_list_key(pl.name), pl_start, len(builder.lines))
 
 
 def _emit_route_maps(builder: _YamlBuilder, config: DeviceConfiguration) -> None:
@@ -659,6 +634,7 @@ def _emit_route_maps(builder: _YamlBuilder, config: DeviceConfiguration) -> None
         if rm.entries:
             builder.append("        entries:")
             for entry in rm.entries:
+                entry_start = len(builder.lines) + 1
                 builder.append(f"        - seq: {entry.seq}")
                 if entry.operation:
                     builder.append(f"          operation: {entry.operation}")
@@ -684,6 +660,7 @@ def _emit_route_maps(builder: _YamlBuilder, config: DeviceConfiguration) -> None
                         builder.append(f"            local_preference: {entry.set.local_preference}")
                     if entry.set.metric_value is not None:
                         builder.append(f"            metric_value: {entry.set.metric_value}")
+                builder.mark(fk.route_map_key(rm.name, entry.seq), entry_start, len(builder.lines))
 
 
 def _emit_vrfs(builder: _YamlBuilder, config: DeviceConfiguration) -> None:
@@ -693,14 +670,20 @@ def _emit_vrfs(builder: _YamlBuilder, config: DeviceConfiguration) -> None:
 
     builder.append("      vrfs:")
     for vrf in config.vrfs:
+        vrf_start = len(builder.lines) + 1
         builder.append(f"      - name: {_yaml_str(vrf.name)}")
         if vrf.description:
+            desc_line = len(builder.lines) + 1
             builder.append(f"        description: {_yaml_str(vrf.description)}")
+            builder.mark(fk.vrf_key(vrf.name, "description"), desc_line, desc_line)
         if vrf.route_distinguisher:
+            rd_line = len(builder.lines) + 1
             builder.append(f"        route_distinguisher: {_yaml_str(vrf.route_distinguisher)}")
+            builder.mark(fk.vrf_key(vrf.name, "rd"), rd_line, rd_line)
         if vrf.address_family_ipv4 and (
             vrf.address_family_ipv4.import_route_targets or vrf.address_family_ipv4.export_route_targets
         ):
+            af_start = len(builder.lines) + 1
             builder.append("        address_family_ipv4:")
             if vrf.address_family_ipv4.import_route_targets:
                 builder.append("          import_route_targets:")
@@ -710,9 +693,11 @@ def _emit_vrfs(builder: _YamlBuilder, config: DeviceConfiguration) -> None:
                 builder.append("          export_route_targets:")
                 for rt in vrf.address_family_ipv4.export_route_targets:
                     builder.append(f"          - {_yaml_str(rt)}")
+            builder.mark(fk.vrf_key(vrf.name, "address_family_ipv4"), af_start, len(builder.lines))
         if vrf.address_family_ipv6 and (
             vrf.address_family_ipv6.import_route_targets or vrf.address_family_ipv6.export_route_targets
         ):
+            af_start = len(builder.lines) + 1
             builder.append("        address_family_ipv6:")
             if vrf.address_family_ipv6.import_route_targets:
                 builder.append("          import_route_targets:")
@@ -722,6 +707,8 @@ def _emit_vrfs(builder: _YamlBuilder, config: DeviceConfiguration) -> None:
                 builder.append("          export_route_targets:")
                 for rt in vrf.address_family_ipv6.export_route_targets:
                     builder.append(f"          - {_yaml_str(rt)}")
+            builder.mark(fk.vrf_key(vrf.name, "address_family_ipv6"), af_start, len(builder.lines))
+        builder.mark(fk.vrf_key(vrf.name), vrf_start, len(builder.lines))
 
 
 def _emit_routing(builder: _YamlBuilder, config: DeviceConfiguration) -> None:
@@ -741,37 +728,46 @@ def _emit_routing(builder: _YamlBuilder, config: DeviceConfiguration) -> None:
     if has_static:
         builder.append("        static_routes:")
         for route in routing.static_routes:
+            route_start = len(builder.lines) + 1
             plen = route.prefix if "/" in route.prefix else route.prefix
             if route.prefix_length and "/" not in route.prefix:
                 plen = f"{route.prefix}/{route.prefix_length}"
             builder.append(f"        - prefix: {_yaml_str(plen)}")
             if route.next_hop:
                 builder.append(f"          next_hop: {_yaml_str(route.next_hop)}")
+            builder.mark(fk.static_route_key(plen), route_start, len(builder.lines))
 
     if routing.ospf_processes:
         builder.append("        ospf_processes:")
         for proc in routing.ospf_processes:
+            proc_start = len(builder.lines) + 1
             builder.append(f"        - id: {proc.id}")
             if proc.router_id:
+                rid_line = len(builder.lines) + 1
                 builder.append(f"          router_id: {_yaml_str(proc.router_id)}")
+                builder.mark(fk.ospf_process_key(proc.id, "router_id"), rid_line, rid_line)
             if proc.networks:
-                builder.append("          networks:")
+                nets_start = builder.append("          networks:")
                 for net in proc.networks:
                     builder.append(f"          - ip: {_yaml_str(net.ip)}")
                     if net.wildcard:
                         builder.append(f"            wildcard: {_yaml_str(net.wildcard)}")
                     if net.area is not None:
                         builder.append(f"            area: {net.area}")
+                builder.mark(fk.ospf_process_key(proc.id, "networks"), nets_start, len(builder.lines))
             if proc.passive_interface_default:
-                builder.append("          passive_interface_default: true")
+                pid_line = builder.append("          passive_interface_default: true")
+                builder.mark(fk.ospf_process_key(proc.id, "passive_interface_default"), pid_line, pid_line)
             if proc.passive_interfaces:
-                builder.append("          passive_interfaces:")
+                pass_start = builder.append("          passive_interfaces:")
                 for passive in proc.passive_interfaces:
                     builder.append(
                         f"          - interface_type: {_yaml_str(passive.interface_type or 'GigabitEthernet')}"
                     )
                     if passive.interface_id:
                         builder.append(f"            interface_id: {_yaml_str(passive.interface_id)}")
+                builder.mark(fk.ospf_process_key(proc.id, "passive_interfaces"), pass_start, len(builder.lines))
+            builder.mark(fk.ospf_process_key(proc.id), proc_start, len(builder.lines))
 
     if routing.bgp and (
         routing.bgp.as_number is not None
@@ -783,40 +779,47 @@ def _emit_routing(builder: _YamlBuilder, config: DeviceConfiguration) -> None:
         )
     ):
         bgp = routing.bgp
-        builder.append("        bgp:")
+        bgp_start = builder.append("        bgp:")
         if bgp.as_number is not None:
             builder.append(f"          as_number: {bgp.as_number}")
         if bgp.neighbors:
-            builder.append("          neighbors:")
+            neigh_start = builder.append("          neighbors:")
             for neighbor in bgp.neighbors:
                 builder.append(f"          - ip: {_yaml_str(neighbor.ip)}")
                 if neighbor.remote_as is not None:
                     builder.append(f"            remote_as: {neighbor.remote_as}")
+            builder.mark(fk.bgp_key("neighbors"), neigh_start, len(builder.lines))
         ipv4_nets = (
             bgp.address_family.ipv4_unicast.networks
             if bgp.address_family and bgp.address_family.ipv4_unicast
             else []
         )
         if ipv4_nets:
-            builder.append("          address_family:")
+            nets_start = builder.append("          address_family:")
             builder.append("            ipv4_unicast:")
             builder.append("              networks:")
             for net in ipv4_nets:
                 builder.append(f"              - network: {_yaml_str(net.network)}")
                 if net.mask:
                     builder.append(f"                mask: {_yaml_str(net.mask)}")
+            builder.mark(fk.bgp_key("address_family.ipv4_unicast.networks"), nets_start, len(builder.lines))
+        builder.mark(fk.bgp_key(), bgp_start, len(builder.lines))
 
     if routing.isis and (routing.isis.area_tag or routing.isis.nets or routing.isis.is_type):
         isis = routing.isis
-        builder.append("        isis:")
+        isis_start = builder.append("        isis:")
         if isis.area_tag:
             builder.append(f"          area_tag: {_yaml_str(isis.area_tag)}")
         if isis.nets:
-            builder.append("          nets:")
+            nets_start = builder.append("          nets:")
             for net in isis.nets:
                 builder.append(f"          - tag: {_yaml_str(net.tag)}")
+            builder.mark(fk.isis_key("nets"), nets_start, len(builder.lines))
         if isis.is_type:
+            type_line = len(builder.lines) + 1
             builder.append(f"          is_type: {_yaml_str(isis.is_type)}")
+            builder.mark(fk.isis_key("is_type"), type_line, type_line)
+        builder.mark(fk.isis_key(), isis_start, len(builder.lines))
 
     for subsection in ROUTING_SUBSECTION_HINTS:
         if subsection.key == "static_routes":
@@ -918,12 +921,12 @@ def _emit_aaa(builder: _YamlBuilder, config: DeviceConfiguration) -> None:
         aaa_rel: dict[str, tuple[int, int]] = {}
         if aaa.new_model:
             nm_line = builder.append("        new_model: true")
-            aaa_rel["aaa.new_model"] = (nm_line, nm_line)
+            aaa_rel[fk.aaa_new_model()] = (nm_line, nm_line)
         if aaa.authentication and aaa.authentication.logins:
             auth_start = builder.append("        authentication:")
             logins_start = builder.append("          logins:")
             for login in aaa.authentication.logins:
-                login_key = _aaa_login_key(login.name)
+                login_key = fk.aaa_login_key(login.name)
                 login_start = builder.append(f"          - name: {_yaml_str(login.name)}")
                 if login.methods:
                     methods_start = builder.append("            methods:")
@@ -937,7 +940,7 @@ def _emit_aaa(builder: _YamlBuilder, config: DeviceConfiguration) -> None:
             authz_start = builder.append("        authorization:")
             execs_start = builder.append("          execs:")
             for authz in aaa.authorization.execs:
-                authz_key = _aaa_authz_key(authz.name)
+                authz_key = fk.aaa_authz_key(authz.name)
                 authz_start_line = builder.append(f"          - name: {_yaml_str(authz.name)}")
                 if authz.methods:
                     methods_start = builder.append("            methods:")
@@ -951,7 +954,7 @@ def _emit_aaa(builder: _YamlBuilder, config: DeviceConfiguration) -> None:
             acct_start = builder.append("        accounting:")
             execs_start = builder.append("          execs:")
             for acct in aaa.accounting.execs:
-                acct_key = _aaa_acct_key(acct.name)
+                acct_key = fk.aaa_acct_key(acct.name)
                 acct_start_line = builder.append(f"          - name: {_yaml_str(acct.name)}")
                 if acct.action_type:
                     action_line = builder.append(f"            action_type: {_yaml_str(acct.action_type)}")
@@ -965,7 +968,7 @@ def _emit_aaa(builder: _YamlBuilder, config: DeviceConfiguration) -> None:
             aaa_rel["aaa.accounting.execs"] = (execs_start, len(builder.lines))
             aaa_rel["aaa.accounting"] = (acct_start, len(builder.lines))
         _apply_crypto_marks(builder, aaa_rel)
-        builder.mark("aaa", start, len(builder.lines))
+        builder.mark(fk.aaa_section(), start, len(builder.lines))
     elif config.section_is_empty("aaa"):
         builder.hint_line(f"      aaa:{_section_hint('type: aaa new-model ...')}")
 
@@ -981,17 +984,13 @@ def _emit_snmp_server(builder: _YamlBuilder, config: DeviceConfiguration) -> Non
                 if comm.permission:
                     builder.append(f'          permission: {_yaml_str(comm.permission)}')
         if snmp.contact:
-            builder.append(f"        contact: {_yaml_str(snmp.contact)}")
+            contact_line = builder.append(f"        contact: {_yaml_str(snmp.contact)}")
+            builder.mark(fk.snmp_server_contact(), contact_line, contact_line)
         if snmp.location:
             builder.append(f"        location: {_yaml_str(snmp.location)}")
-        builder.mark("snmp_server", start, len(builder.lines))
+        builder.mark(fk.snmp_server_section(), start, len(builder.lines))
     elif config.section_is_empty("snmp_server"):
         builder.hint_line(f"      snmp_server:{_section_hint('type: snmp-server community ...')}")
-
-
-def _ntp_endpoint_key(kind: str, ip: str) -> str:
-    bucket = "peers" if kind == "peer" else "servers"
-    return f"ntp.{bucket}:{ip}"
 
 
 def _emit_ntp(builder: _YamlBuilder, config: DeviceConfiguration) -> None:
@@ -1007,7 +1006,7 @@ def _emit_ntp(builder: _YamlBuilder, config: DeviceConfiguration) -> None:
                     builder.append(f'          vrf: {_yaml_str(srv.vrf)}')
                 if srv.prefer:
                     builder.append("          prefer: true")
-                ntp_rel[_ntp_endpoint_key("server", srv.ip)] = (entry_start, len(builder.lines))
+                ntp_rel[fk.ntp_endpoint_key("server", srv.ip)] = (entry_start, len(builder.lines))
             ntp_rel["ntp.servers"] = (servers_start, len(builder.lines))
         if ntp.peers:
             peers_start = builder.append("        peers:")
@@ -1017,10 +1016,10 @@ def _emit_ntp(builder: _YamlBuilder, config: DeviceConfiguration) -> None:
                     builder.append(f'          vrf: {_yaml_str(peer.vrf)}')
                 if peer.prefer:
                     builder.append("          prefer: true")
-                ntp_rel[_ntp_endpoint_key("peer", peer.ip)] = (entry_start, len(builder.lines))
+                ntp_rel[fk.ntp_endpoint_key("peer", peer.ip)] = (entry_start, len(builder.lines))
             ntp_rel["ntp.peers"] = (peers_start, len(builder.lines))
         _apply_crypto_marks(builder, ntp_rel)
-        builder.mark("ntp", start, len(builder.lines))
+        builder.mark(fk.ntp_section(), start, len(builder.lines))
     elif config.section_is_empty("ntp"):
         builder.hint_line(f"      ntp:{_section_hint('type: ntp server 10.0.0.1')}")
 
@@ -1030,8 +1029,9 @@ def _emit_dhcp(builder: _YamlBuilder, config: DeviceConfiguration) -> None:
     if dhcp and not config.section_is_empty("dhcp"):
         start = builder.append("      dhcp:")
         if dhcp.enabled:
-            builder.append("        enabled: true")
-        builder.mark("dhcp", start, len(builder.lines))
+            enabled_line = builder.append("        enabled: true")
+            builder.mark(fk.dhcp_enabled(), enabled_line, enabled_line)
+        builder.mark(fk.dhcp_section(), start, len(builder.lines))
     elif config.section_is_empty("dhcp"):
         builder.hint_line(f"      dhcp:{_section_hint('type: ip dhcp ...')}")
 
@@ -1040,11 +1040,14 @@ def _emit_dhcp_pools(builder: _YamlBuilder, config: DeviceConfiguration) -> None
     if config.dhcp_pools:
         start = builder.append("      dhcp_pools:")
         for pool in config.dhcp_pools:
+            pool_start = len(builder.lines) + 1
             builder.append(f'      - name: {_yaml_str(pool.name)}')
             if pool.network_number:
+                net_start = len(builder.lines) + 1
                 builder.append(f'        network_number: {_yaml_str(pool.network_number)}')
-            if pool.network_mask:
-                builder.append(f'        network_mask: {_yaml_str(pool.network_mask)}')
+                if pool.network_mask:
+                    builder.append(f'        network_mask: {_yaml_str(pool.network_mask)}')
+                builder.mark(fk.dhcp_pool_key(pool.name, "network"), net_start, len(builder.lines))
             if pool.default_routers:
                 builder.append("        default_routers:")
                 for router in pool.default_routers:
@@ -1053,7 +1056,8 @@ def _emit_dhcp_pools(builder: _YamlBuilder, config: DeviceConfiguration) -> None
                 builder.append("        dns_servers:")
                 for dns in pool.dns_servers:
                     builder.append(f'        - {_yaml_str(dns)}')
-        builder.mark("dhcp_pools", start, len(builder.lines))
+            builder.mark(fk.dhcp_pool_key(pool.name), pool_start, len(builder.lines))
+        builder.mark(fk.dhcp_pools_section(), start, len(builder.lines))
     elif config.section_is_empty("dhcp_pools"):
         builder.hint_line(f"      dhcp_pools:{_section_hint('type: ip dhcp pool LAN')}")
 
@@ -1074,7 +1078,7 @@ def _emit_nat(builder: _YamlBuilder, config: DeviceConfiguration) -> None:
                             builder.append(f'            interface_id: {_yaml_str(iface.interface_id)}')
                         if iface.overload:
                             builder.append("            overload: true")
-        builder.mark("nat", start, len(builder.lines))
+        builder.mark(fk.nat_section(), start, len(builder.lines))
     elif config.section_is_empty("nat"):
         builder.hint_line(f"      nat:{_section_hint('type: ip nat inside source ...')}")
 
@@ -1106,7 +1110,7 @@ def _emit_ikev2_keyring_peer(builder: _YamlBuilder, peer: CryptoIkev2KeyringPeer
 
 def _emit_ikev2_profile(builder: _YamlBuilder, profile: CryptoIkev2Profile) -> dict[str, tuple[int, int]]:
     rel: dict[str, tuple[int, int]] = {}
-    base = _crypto_profile_key(profile.name)
+    base = fk.crypto_profile_key(profile.name)
     block_start = builder.append(f"            - name: {_yaml_str(profile.name)}")
     desc_line = _emit_crypto_str(builder, "              ", "description", profile.description)
     if desc_line:
@@ -1173,7 +1177,7 @@ def _emit_crypto(builder: _YamlBuilder, config: DeviceConfiguration) -> None:
     if crypto.ipsec_profiles:
         ipsec_profiles_start = builder.append("        ipsec_profiles:")
         for prof in crypto.ipsec_profiles:
-            prof_key = _crypto_ipsec_profile_key(prof.name)
+            prof_key = fk.crypto_ipsec_profile_key(prof.name)
             prof_start = builder.append(f"          - name: {_yaml_str(prof.name)}")
             if prof.set_transform_set:
                 ts_start = len(builder.lines) + 1
@@ -1196,7 +1200,7 @@ def _emit_crypto(builder: _YamlBuilder, config: DeviceConfiguration) -> None:
     if crypto.ipsec_transform_sets:
         transform_sets_start = builder.append("        ipsec_transform_sets:")
         for ts in crypto.ipsec_transform_sets:
-            ts_key = _crypto_transform_set_key(ts.name)
+            ts_key = fk.crypto_transform_set_key(ts.name)
             ts_start = builder.append(f"          - name: {_yaml_str(ts.name)}")
             esp_line = _emit_crypto_str(builder, "            ", "esp", ts.esp)
             if esp_line:
@@ -1215,17 +1219,17 @@ def _emit_crypto(builder: _YamlBuilder, config: DeviceConfiguration) -> None:
         ikev2_start = builder.append("        ikev2:")
         if ikev2.nat_keepalive is not None:
             nat_line = builder.append(f"          nat_keepalive: {ikev2.nat_keepalive}")
-            crypto_rel["crypto.ikev2:nat_keepalive"] = (nat_line, nat_line)
+            crypto_rel[fk.crypto_ikev2_global("nat_keepalive")] = (nat_line, nat_line)
         if ikev2.dpd_interval is not None:
             dpd_line = builder.append(f"          dpd_interval: {ikev2.dpd_interval}")
-            crypto_rel["crypto.ikev2:dpd_interval"] = (dpd_line, dpd_line)
+            crypto_rel[fk.crypto_ikev2_global("dpd_interval")] = (dpd_line, dpd_line)
         _emit_crypto_str(builder, "          ", "dpd_query", ikev2.dpd_query)
         if ikev2.dpd_retry is not None:
             builder.append(f"          dpd_retry: {ikev2.dpd_retry}")
         if ikev2.proposals:
             proposals_start = builder.append("          proposals:")
             for prop in ikev2.proposals:
-                prop_key = _crypto_proposal_key(prop.name)
+                prop_key = fk.crypto_proposal_key(prop.name)
                 prop_start = builder.append(f"            - name: {_yaml_str(prop.name)}")
                 if prop.encryption:
                     enc_start = len(builder.lines) + 1
@@ -1256,7 +1260,7 @@ def _emit_crypto(builder: _YamlBuilder, config: DeviceConfiguration) -> None:
         if ikev2.policies:
             policies_start = builder.append("          policies:")
             for pol in ikev2.policies:
-                pol_key = _crypto_policy_key(pol.name)
+                pol_key = fk.crypto_policy_key(pol.name)
                 pol_start = builder.append(f"            - name: {_yaml_str(pol.name)}")
                 if pol.proposals:
                     prop_start = len(builder.lines) + 1
@@ -1282,7 +1286,7 @@ def _emit_crypto(builder: _YamlBuilder, config: DeviceConfiguration) -> None:
         if ikev2.keyrings:
             keyrings_start = builder.append("          keyrings:")
             for kr in ikev2.keyrings:
-                kr_key = _crypto_keyring_key(kr.name)
+                kr_key = fk.crypto_keyring_key(kr.name)
                 kr_start = builder.append(f"            - name: {_yaml_str(kr.name)}")
                 if kr.peers:
                     peers_start = builder.append("              peers:")
@@ -1305,7 +1309,7 @@ def _emit_crypto(builder: _YamlBuilder, config: DeviceConfiguration) -> None:
         pki_start = builder.append("        pki:")
         trustpoints_start = builder.append("          trustpoints:")
         for tp in pki.trustpoints:
-            tp_key = _crypto_trustpoint_key(tp.id)
+            tp_key = fk.crypto_trustpoint_key(tp.id)
             tp_start = builder.append(f"            - id: {_yaml_str(tp.id)}")
             enroll_line = _emit_crypto_bool(builder, "              ", "enrollment_terminal", tp.enrollment_terminal)
             if enroll_line:
@@ -1327,7 +1331,7 @@ def _emit_crypto(builder: _YamlBuilder, config: DeviceConfiguration) -> None:
         crypto_rel["crypto.pki"] = (pki_start, len(builder.lines))
 
     _apply_crypto_marks(builder, crypto_rel)
-    builder.mark("crypto", start, len(builder.lines))
+    builder.mark(fk.crypto_section(), start, len(builder.lines))
 
 
 _SECTION_EMITTERS: dict[str, Callable[[_YamlBuilder, DeviceConfiguration], None]] = {

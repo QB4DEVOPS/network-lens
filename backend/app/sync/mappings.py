@@ -2,21 +2,8 @@
 
 from __future__ import annotations
 
-from app.models import CliFieldRef, LineMapping, NacYamlResult, ParseResult
-
-
-def _specificity(field_key: str) -> int:
-    if field_key.endswith(":ipv4") or field_key.endswith(":ipv6") or field_key.endswith(":shutdown") or field_key.endswith(":description"):
-        return 3
-    if field_key.startswith("interface:"):
-        return 2
-    if field_key.startswith("crypto.") and ":" in field_key:
-        return 2 + field_key.count(":")
-    if field_key.startswith("aaa.") and ":" in field_key:
-        return 2 + field_key.count(":")
-    if field_key.startswith("ntp.") and ":" in field_key:
-        return 2
-    return 1
+from app.field_keys import mapping_specificity
+from app.models import LineMapping, NacYamlResult, ParseResult
 
 
 def build_line_mappings(parse_result: ParseResult, yaml_result: NacYamlResult) -> list[LineMapping]:
@@ -43,7 +30,7 @@ def mapping_for_cli_line(mappings: list[LineMapping], cli_line: int) -> LineMapp
     matches = [m for m in mappings if m.cli_line == cli_line]
     if not matches:
         return None
-    return max(matches, key=lambda m: _specificity(m.field_key))
+    return max(matches, key=lambda m: mapping_specificity(m.field_key))
 
 
 def mapping_for_yaml_line(mappings: list[LineMapping], yaml_line: int) -> LineMapping | None:

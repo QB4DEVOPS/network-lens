@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 
 from app.parsers.crypto_cli import CryptoParseState, parse_crypto_line
+from app import field_keys as fk
 from app.models import (
     AaaAccountingConfig,
     AaaAccountingExec,
@@ -508,6 +509,29 @@ def _parse_username_line(line: str) -> UserAccount | None:
     )
 
 
+def _parse_enable_credential(line: str) -> tuple[str, str, str | None] | None:
+    """Return (kind, value, enc_type) where kind is ``secret`` or ``password``."""
+    lower = line.lower()
+    if lower.startswith("enable secret "):
+        kind = "secret"
+        rest = line[len("enable secret ") :].strip()
+    elif lower.startswith("enable password "):
+        kind = "password"
+        rest = line[len("enable password ") :].strip()
+    else:
+        return None
+    parts = rest.split(None, 1)
+    enc_type: str | None = None
+    if parts and parts[0].isdigit():
+        enc_type = parts[0]
+        value = parts[1].strip() if len(parts) > 1 else ""
+    else:
+        value = rest
+    if not value:
+        return None
+    return kind, value, enc_type
+
+
 _BANNER_START = re.compile(r"^banner\s+(motd|login|exec)\s+(.)(.*)$", re.IGNORECASE)
 
 
@@ -763,7 +787,7 @@ def _append_ntp_endpoint(
         ntp.peers.append(entry)
     else:
         ntp.servers.append(entry)
-    field_key = f"ntp.{bucket}:{parts[2]}"
+    field_key = fk.ntp_endpoint_key(kind, parts[2])
     label = f"ntp {kind} {parts[2]}"
     if vrf:
         label += f" vrf {vrf}"
@@ -859,11 +883,6 @@ def parse_cli(cli_text: str) -> ParseResult:
     current_dhcp_pool: DhcpPool | None = None
     crypto_state = CryptoParseState()
 
-    def iface_key(name: str, suffix: str | None = None) -> str:
-        if suffix:
-            return f"interface:{name}:{suffix}"
-        return f"interface:{name}"
-
     def leave_interface() -> None:
         nonlocal current_iface
         current_iface = None
@@ -933,7 +952,7 @@ def parse_cli(cli_text: str) -> ParseResult:
                 banner_buffer.append(line[:close_idx])
                 _set_banner_text(device, kind, "\n".join(banner_buffer).rstrip("\n"))
                 cli_refs.append(
-                    CliFieldRef(cli_line=start_line, field_key=f"banner.{kind}", label=f"banner {kind}")
+                    CliFieldRef(cli_line=start_line, field_key=fk.banner_key(kind), label=f"banner {kind}")
                 )
                 pending_banner = None
                 banner_buffer = []
@@ -947,7 +966,7 @@ def parse_cli(cli_text: str) -> ParseResult:
             if user:
                 _upsert_user(device, user)
                 cli_refs.append(
-                    CliFieldRef(cli_line=line_num, field_key=f"users:{user.name}", label=f"username {user.name}")
+                    CliFieldRef(cli_line=line_num, field_key=fk.user_key(user.name), label=f"username {user.name}")
                 )
             leave_interface()
         elif lower.startswith("banner "):
@@ -957,7 +976,7 @@ def parse_cli(cli_text: str) -> ParseResult:
                 if complete:
                     _set_banner_text(device, kind, text)
                     cli_refs.append(
-                        CliFieldRef(cli_line=line_num, field_key=f"banner.{kind}", label=f"banner {kind}")
+                        CliFieldRef(cli_line=line_num, field_key=fk.banner_key(kind), label=f"banner {kind}")
                     )
                 else:
                     pending_banner = (kind, delim, line_num)
@@ -976,24 +995,24 @@ def parse_cli(cli_text: str) -> ParseResult:
                     summer_time_zone=parts[4] if len(parts) >= 5 else None,
                 )
                 cli_refs.append(
-                    CliFieldRef(cli_line=line_num, field_key="clock.timezone", label="clock timezone")
+                    CliFieldRef(cli_line=line_num, field_key=fk.clock_timezone(), label="clock timezone")
                 )
             leave_interface()
         elif lower.startswith("mtu "):
             parts = line.split()
             if len(parts) >= 2 and parts[1].isdigit():
                 device.system.mtu = int(parts[1])
-                cli_refs.append(CliFieldRef(cli_line=line_num, field_key="system.mtu", label="mtu"))
+                cli_refs.append(CliFieldRef(cli_line=line_num, field_key=fk.system_mtu(), label="mtu"))
             leave_interface()
         elif lower.startswith("ip domain-name ") or lower.startswith("ip domain name "):
             device.system.ip_domain_name = line.split(None, 2)[2].strip()
             cli_refs.append(
-                CliFieldRef(cli_line=line_num, field_key="system.ip_domain_name", label="ip domain-name")
+                CliFieldRef(cli_line=line_num, field_key=fk.system_ip_domain_name(), label="ip domain-name")
             )
             leave_interface()
         elif lower.startswith("hostname "):
             device.system.hostname = line.split(None, 1)[1].strip()
-            cli_refs.append(CliFieldRef(cli_line=line_num, field_key="system.hostname", label="hostname"))
+            cli_refs.append(CliFieldRef(cli_line=line_num, field_key=fk.system_hostname(), label="hostname"))
             leave_interface()
             leave_nested()
         elif lower == "ipv6 unicast-routing":
@@ -1001,7 +1020,7 @@ def parse_cli(cli_text: str) -> ParseResult:
             cli_refs.append(
                 CliFieldRef(
                     cli_line=line_num,
-                    field_key="system.ipv6_unicast_routing",
+                    field_key=fk.system_ipv6_unicast_routing(),
                     label="ipv6 unicast-routing",
                 )
             )
@@ -1011,7 +1030,7 @@ def parse_cli(cli_text: str) -> ParseResult:
             cli_refs.append(
                 CliFieldRef(
                     cli_line=line_num,
-                    field_key="system.ipv6_unicast_routing",
+                    field_key=fk.system_ipv6_unicast_routing(),
                     label="no ipv6 unicast-routing",
                 )
             )
@@ -1043,7 +1062,7 @@ def parse_cli(cli_text: str) -> ParseResult:
                 cli_refs.append(
                     CliFieldRef(
                         cli_line=line_num,
-                        field_key=f"routing.ospf_processes.{current_ospf_id}",
+                        field_key=fk.ospf_process_key(current_ospf_id),
                         label=f"router ospf {current_ospf_id}",
                     )
                 )
@@ -1054,7 +1073,7 @@ def parse_cli(cli_text: str) -> ParseResult:
                 cli_refs.append(
                     CliFieldRef(
                         cli_line=line_num,
-                        field_key="routing.bgp",
+                        field_key=fk.bgp_key(),
                         label=f"router bgp {parts[2]}",
                     )
                 )
@@ -1065,7 +1084,7 @@ def parse_cli(cli_text: str) -> ParseResult:
                 cli_refs.append(
                     CliFieldRef(
                         cli_line=line_num,
-                        field_key="routing.isis",
+                        field_key=fk.isis_key(),
                         label=line.strip(),
                     )
                 )
@@ -1087,7 +1106,7 @@ def parse_cli(cli_text: str) -> ParseResult:
                 cli_refs.append(
                     CliFieldRef(
                         cli_line=line_num,
-                        field_key=f"routing.ospf_processes.{current_ospf_id}.router_id",
+                        field_key=fk.ospf_process_key(current_ospf_id, "router_id"),
                         label="router-id",
                     )
                 )
@@ -1100,7 +1119,7 @@ def parse_cli(cli_text: str) -> ParseResult:
                     cli_refs.append(
                         CliFieldRef(
                             cli_line=line_num,
-                            field_key=f"routing.ospf_processes.{current_ospf_id}.networks",
+                            field_key=fk.ospf_process_key(current_ospf_id, "networks"),
                             label="network",
                         )
                     )
@@ -1109,7 +1128,7 @@ def parse_cli(cli_text: str) -> ParseResult:
                 cli_refs.append(
                     CliFieldRef(
                         cli_line=line_num,
-                        field_key=f"routing.ospf_processes.{current_ospf_id}.passive_interface_default",
+                        field_key=fk.ospf_process_key(current_ospf_id, "passive_interface_default"),
                         label="passive-interface default",
                     )
                 )
@@ -1120,7 +1139,7 @@ def parse_cli(cli_text: str) -> ParseResult:
                     cli_refs.append(
                         CliFieldRef(
                             cli_line=line_num,
-                            field_key=f"routing.ospf_processes.{current_ospf_id}.passive_interfaces",
+                            field_key=fk.ospf_process_key(current_ospf_id, "passive_interfaces"),
                             label="passive-interface",
                         )
                     )
@@ -1138,7 +1157,7 @@ def parse_cli(cli_text: str) -> ParseResult:
                 cli_refs.append(
                     CliFieldRef(
                         cli_line=line_num,
-                        field_key="routing.bgp.neighbors",
+                        field_key=fk.bgp_key("neighbors"),
                         label="neighbor remote-as",
                     )
                 )
@@ -1151,7 +1170,7 @@ def parse_cli(cli_text: str) -> ParseResult:
                     cli_refs.append(
                         CliFieldRef(
                             cli_line=line_num,
-                            field_key="routing.bgp.address_family.ipv4_unicast.networks",
+                            field_key=fk.bgp_key("address_family.ipv4_unicast.networks"),
                             label="network",
                         )
                     )
@@ -1162,7 +1181,7 @@ def parse_cli(cli_text: str) -> ParseResult:
                 cli_refs.append(
                     CliFieldRef(
                         cli_line=line_num,
-                        field_key="routing.isis.nets",
+                        field_key=fk.isis_key("nets"),
                         label="net",
                     )
                 )
@@ -1171,7 +1190,7 @@ def parse_cli(cli_text: str) -> ParseResult:
                 cli_refs.append(
                     CliFieldRef(
                         cli_line=line_num,
-                        field_key="routing.isis.is_type",
+                        field_key=fk.isis_key("is_type"),
                         label="is-type",
                     )
                 )
@@ -1180,17 +1199,17 @@ def parse_cli(cli_text: str) -> ParseResult:
             leave_nested()
             current_vrf = _get_vrf(device, vrf_def.group(1))
             cli_refs.append(
-                CliFieldRef(cli_line=line_num, field_key=f"vrf:{current_vrf.name}", label=f"vrf definition {current_vrf.name}")
+                CliFieldRef(cli_line=line_num, field_key=fk.vrf_key(current_vrf.name), label=f"vrf definition {current_vrf.name}")
             )
         elif current_vrf is not None and lower.startswith("description "):
             current_vrf.description = line.split(None, 1)[1].strip()
             cli_refs.append(
-                CliFieldRef(cli_line=line_num, field_key=f"vrf:{current_vrf.name}:description", label="description")
+                CliFieldRef(cli_line=line_num, field_key=fk.vrf_key(current_vrf.name, "description"), label="description")
             )
         elif current_vrf is not None and (rd_match := re.match(r"^rd\s+(\S+)$", line, re.IGNORECASE)):
             current_vrf.route_distinguisher = rd_match.group(1)
             cli_refs.append(
-                CliFieldRef(cli_line=line_num, field_key=f"vrf:{current_vrf.name}:rd", label="rd")
+                CliFieldRef(cli_line=line_num, field_key=fk.vrf_key(current_vrf.name, "rd"), label="rd")
             )
         elif current_vrf is not None and (af_match := re.match(r"^address-family\s+(ipv4|ipv6)$", line, re.IGNORECASE)):
             current_vrf_af = af_match.group(1).lower()
@@ -1210,7 +1229,7 @@ def parse_cli(cli_text: str) -> ParseResult:
             cli_refs.append(
                 CliFieldRef(
                     cli_line=line_num,
-                    field_key=f"vrf:{current_vrf.name}:address_family_{current_vrf_af}",
+                    field_key=fk.vrf_key(current_vrf.name, f"address_family_{current_vrf_af}"),
                     label="route-target",
                 )
             )
@@ -1223,7 +1242,7 @@ def parse_cli(cli_text: str) -> ParseResult:
             cli_refs.append(
                 CliFieldRef(
                     cli_line=line_num,
-                    field_key=f"access_lists.standard:{current_std_acl.name}",
+                    field_key=fk.access_list_standard_key(current_std_acl.name),
                     label=f"ip access-list standard {current_std_acl.name}",
                 )
             )
@@ -1233,7 +1252,7 @@ def parse_cli(cli_text: str) -> ParseResult:
             cli_refs.append(
                 CliFieldRef(
                     cli_line=line_num,
-                    field_key=f"access_lists.standard:{current_std_acl.name}:entries",
+                    field_key=fk.access_list_standard_key(current_std_acl.name, "entries"),
                     label="access-list entry",
                 )
             )
@@ -1246,7 +1265,7 @@ def parse_cli(cli_text: str) -> ParseResult:
             cli_refs.append(
                 CliFieldRef(
                     cli_line=line_num,
-                    field_key=f"access_lists.extended:{current_ext_acl.name}",
+                    field_key=fk.access_list_extended_key(current_ext_acl.name),
                     label=f"ip access-list extended {current_ext_acl.name}",
                 )
             )
@@ -1256,7 +1275,7 @@ def parse_cli(cli_text: str) -> ParseResult:
             cli_refs.append(
                 CliFieldRef(
                     cli_line=line_num,
-                    field_key=f"access_lists.extended:{current_ext_acl.name}:entries",
+                    field_key=fk.access_list_extended_key(current_ext_acl.name, "entries"),
                     label="access-list entry",
                 )
             )
@@ -1267,7 +1286,7 @@ def parse_cli(cli_text: str) -> ParseResult:
             leave_route_map()
             pl_name = re.match(r"^ip prefix-list\s+(\S+)", line, re.IGNORECASE).group(1)
             cli_refs.append(
-                CliFieldRef(cli_line=line_num, field_key=f"prefix_lists:{pl_name}", label="ip prefix-list")
+                CliFieldRef(cli_line=line_num, field_key=fk.prefix_list_key(pl_name), label="ip prefix-list")
             )
         elif (rm_match := re.match(r"^route-map\s+(\S+)\s+(permit|deny)\s+(\d+)$", line, re.IGNORECASE)):
             leave_interface()
@@ -1278,7 +1297,7 @@ def parse_cli(cli_text: str) -> ParseResult:
             current_rm_entry = RouteMapEntry(seq=seq_str, operation=operation, match=RouteMapMatch(), set=RouteMapSet())
             current_rm.entries.append(current_rm_entry)
             cli_refs.append(
-                CliFieldRef(cli_line=line_num, field_key=f"route_maps:{rm_name}:{seq_str}", label="route-map")
+                CliFieldRef(cli_line=line_num, field_key=fk.route_map_key(rm_name, seq_str), label="route-map")
             )
         elif current_rm_entry is not None and lower.startswith("description "):
             current_rm_entry.description = line.split(None, 1)[1].strip()
@@ -1308,7 +1327,7 @@ def parse_cli(cli_text: str) -> ParseResult:
             current_rm_entry.set.metric_value = int(set_metric.group(1))
         elif lower == "aaa new-model":
             _ensure_aaa(device).new_model = True
-            cli_refs.append(CliFieldRef(cli_line=line_num, field_key="aaa.new_model", label="aaa new-model"))
+            cli_refs.append(CliFieldRef(cli_line=line_num, field_key=fk.aaa_new_model(), label="aaa new-model"))
             leave_nested()
         elif lower.startswith("aaa authentication login "):
             parts = line.split()
@@ -1318,7 +1337,7 @@ def parse_cli(cli_text: str) -> ParseResult:
                     aaa.authentication = AaaAuthenticationConfig()
                 aaa.authentication.logins.append(AaaAuthLogin(name=parts[3], methods=parts[4:]))
                 cli_refs.append(
-                    CliFieldRef(cli_line=line_num, field_key=f"aaa.authentication.logins:{parts[3]}", label="aaa authentication login")
+                    CliFieldRef(cli_line=line_num, field_key=fk.aaa_login_key(parts[3]), label="aaa authentication login")
                 )
             leave_nested()
         elif lower.startswith("aaa authorization exec "):
@@ -1329,7 +1348,7 @@ def parse_cli(cli_text: str) -> ParseResult:
                     aaa.authorization = AaaAuthorizationConfig()
                 aaa.authorization.execs.append(AaaAuthzExec(name=parts[3], methods=parts[4:]))
                 cli_refs.append(
-                    CliFieldRef(cli_line=line_num, field_key=f"aaa.authorization.execs:{parts[3]}", label="aaa authorization exec")
+                    CliFieldRef(cli_line=line_num, field_key=fk.aaa_authz_key(parts[3]), label="aaa authorization exec")
                 )
             leave_nested()
         elif lower.startswith("aaa accounting "):
@@ -1343,7 +1362,7 @@ def parse_cli(cli_text: str) -> ParseResult:
                     AaaAccountingExec(name=parts[3], action_type=action_type, start_stop_groups=groups)
                 )
                 cli_refs.append(
-                    CliFieldRef(cli_line=line_num, field_key=f"aaa.accounting.execs:{parts[3]}", label="aaa accounting")
+                    CliFieldRef(cli_line=line_num, field_key=fk.aaa_acct_key(parts[3]), label="aaa accounting")
                 )
             leave_nested()
         elif lower.startswith("snmp-server community "):
@@ -1353,11 +1372,11 @@ def parse_cli(cli_text: str) -> ParseResult:
                 snmp.snmp_communities.append(
                     SnmpCommunity(name=parts[2], permission=parts[3] if len(parts) > 3 else None)
                 )
-                cli_refs.append(CliFieldRef(cli_line=line_num, field_key="snmp_server", label="snmp-server community"))
+                cli_refs.append(CliFieldRef(cli_line=line_num, field_key=fk.snmp_server_section(), label="snmp-server community"))
             leave_nested()
         elif lower.startswith("snmp-server contact "):
             _ensure_snmp(device).contact = line.split(None, 2)[2].strip()
-            cli_refs.append(CliFieldRef(cli_line=line_num, field_key="snmp_server.contact", label="snmp-server contact"))
+            cli_refs.append(CliFieldRef(cli_line=line_num, field_key=fk.snmp_server_contact(), label="snmp-server contact"))
             leave_nested()
         elif lower.startswith("ntp server ") or lower.startswith("ntp peer "):
             parts = line.split()
@@ -1366,13 +1385,13 @@ def parse_cli(cli_text: str) -> ParseResult:
             leave_nested()
         elif lower == "service dhcp":
             _ensure_dhcp(device).enabled = True
-            cli_refs.append(CliFieldRef(cli_line=line_num, field_key="dhcp.enabled", label="service dhcp"))
+            cli_refs.append(CliFieldRef(cli_line=line_num, field_key=fk.dhcp_enabled(), label="service dhcp"))
             leave_nested()
         elif lower.startswith("ip dhcp pool "):
             leave_nested()
             current_dhcp_pool = _upsert_dhcp_pool(device, line.split(None, 3)[3].strip())
             cli_refs.append(
-                CliFieldRef(cli_line=line_num, field_key=f"dhcp_pools:{current_dhcp_pool.name}", label="ip dhcp pool")
+                CliFieldRef(cli_line=line_num, field_key=fk.dhcp_pool_key(current_dhcp_pool.name), label="ip dhcp pool")
             )
         elif current_dhcp_pool is not None and lower.startswith("network "):
             parts = line.split()
@@ -1383,7 +1402,7 @@ def parse_cli(cli_text: str) -> ParseResult:
                 cli_refs.append(
                     CliFieldRef(
                         cli_line=line_num,
-                        field_key=f"dhcp_pools:{current_dhcp_pool.name}:network",
+                        field_key=fk.dhcp_pool_key(current_dhcp_pool.name, "network"),
                         label="network",
                     )
                 )
@@ -1413,17 +1432,30 @@ def parse_cli(cli_text: str) -> ParseResult:
                         ],
                     )
                 )
-                cli_refs.append(CliFieldRef(cli_line=line_num, field_key="nat", label="ip nat inside source"))
+                cli_refs.append(CliFieldRef(cli_line=line_num, field_key=fk.nat_section(), label="ip nat inside source"))
             leave_nested()
-        elif lower.startswith("enable secret ") or lower.startswith("enable password "):
-            device.secrets_redacted = True
-            warnings.append(
-                ParseWarning(
-                    line=line_num,
-                    message="Secret redacted from generated output",
-                    cli_line="enable secret [REDACTED-SECRET]",
+        elif (parsed_enable := _parse_enable_credential(line)) is not None:
+            kind, value, enc_type = parsed_enable
+            if kind == "secret":
+                device.system.enable_secret = value
+                device.system.enable_secret_type = enc_type
+                cli_refs.append(
+                    CliFieldRef(
+                        cli_line=line_num,
+                        field_key=fk.system_enable_secret(),
+                        label="enable secret",
+                    )
                 )
-            )
+            else:
+                device.system.enable_password = value
+                device.system.enable_password_type = enc_type
+                cli_refs.append(
+                    CliFieldRef(
+                        cli_line=line_num,
+                        field_key=fk.system_enable_password(),
+                        label="enable password",
+                    )
+                )
             leave_interface()
         elif lower.startswith("ip route "):
             parts = line.split()
@@ -1440,11 +1472,12 @@ def parse_cli(cli_text: str) -> ParseResult:
                     prefix = f"{parts[2]}/{plen}"
                     next_idx = 4
                 next_hop = parts[next_idx] if len(parts) > next_idx else None
+                route_prefix = prefix if "/" in prefix or plen is None else f"{prefix}/{plen}"
                 device.static_routes.append(
                     StaticRoute(prefix=prefix, prefix_length=plen, next_hop=next_hop)
                 )
                 cli_refs.append(
-                    CliFieldRef(cli_line=line_num, field_key="routing.static_route", label="ip route")
+                    CliFieldRef(cli_line=line_num, field_key=fk.static_route_key(route_prefix), label="ip route")
                 )
             leave_interface()
         elif lower.startswith("interface "):
@@ -1457,7 +1490,7 @@ def parse_cli(cli_text: str) -> ParseResult:
                 cli_refs.append(
                     CliFieldRef(
                         cli_line=line_num,
-                        field_key=iface_key(parsed.name),
+                        field_key=fk.interface_key(parsed.name),
                         label=f"interface {parsed.name}",
                     )
                 )
@@ -1477,7 +1510,7 @@ def parse_cli(cli_text: str) -> ParseResult:
                 cli_refs.append(
                     CliFieldRef(
                         cli_line=line_num,
-                        field_key=iface_key(current_iface.name, "shutdown"),
+                        field_key=fk.interface_key(current_iface.name, "shutdown"),
                         label="no shutdown",
                     )
                 )
@@ -1490,7 +1523,7 @@ def parse_cli(cli_text: str) -> ParseResult:
                 cli_refs.append(
                     CliFieldRef(
                         cli_line=line_num,
-                        field_key=iface_key(current_iface.name, "description"),
+                        field_key=fk.interface_key(current_iface.name, "description"),
                         label="description",
                     )
                 )
@@ -1500,7 +1533,7 @@ def parse_cli(cli_text: str) -> ParseResult:
                 cli_refs.append(
                     CliFieldRef(
                         cli_line=line_num,
-                        field_key=iface_key(current_iface.name, "vrf"),
+                        field_key=fk.interface_key(current_iface.name, "vrf"),
                         label="vrf forwarding",
                     )
                 )
@@ -1510,7 +1543,7 @@ def parse_cli(cli_text: str) -> ParseResult:
                 cli_refs.append(
                     CliFieldRef(
                         cli_line=line_num,
-                        field_key=iface_key(current_iface.name, "ipv4"),
+                        field_key=fk.interface_key(current_iface.name, "ipv4"),
                         label="ip address",
                     )
                 )
@@ -1520,7 +1553,7 @@ def parse_cli(cli_text: str) -> ParseResult:
                 cli_refs.append(
                     CliFieldRef(
                         cli_line=line_num,
-                        field_key=iface_key(current_iface.name, "ipv6"),
+                        field_key=fk.interface_key(current_iface.name, "ipv6"),
                         label="ipv6 enable",
                     )
                 )
@@ -1530,7 +1563,7 @@ def parse_cli(cli_text: str) -> ParseResult:
                 cli_refs.append(
                     CliFieldRef(
                         cli_line=line_num,
-                        field_key=iface_key(current_iface.name, "ipv6"),
+                        field_key=fk.interface_key(current_iface.name, "ipv6"),
                         label="ipv6 address",
                     )
                 )
@@ -1540,7 +1573,7 @@ def parse_cli(cli_text: str) -> ParseResult:
                 cli_refs.append(
                     CliFieldRef(
                         cli_line=line_num,
-                        field_key=iface_key(current_iface.name, "nat_inside"),
+                        field_key=fk.interface_key(current_iface.name, "nat_inside"),
                         label="ip nat inside",
                     )
                 )
@@ -1550,7 +1583,7 @@ def parse_cli(cli_text: str) -> ParseResult:
                 cli_refs.append(
                     CliFieldRef(
                         cli_line=line_num,
-                        field_key=iface_key(current_iface.name, "nat_outside"),
+                        field_key=fk.interface_key(current_iface.name, "nat_outside"),
                         label="ip nat outside",
                     )
                 )
@@ -1564,7 +1597,7 @@ def parse_cli(cli_text: str) -> ParseResult:
                     cli_refs.append(
                         CliFieldRef(
                             cli_line=line_num,
-                            field_key=iface_key(current_iface.name, "channel_group"),
+                            field_key=fk.interface_key(current_iface.name, "channel_group"),
                             label="channel-group",
                         )
                     )

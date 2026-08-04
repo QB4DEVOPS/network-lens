@@ -38,16 +38,6 @@ def validate_device(device: Device) -> ValidationStatus:
                 )
             )
 
-    if device.secrets_redacted:
-        issues.append(
-            SemanticIssue(
-                severity="warning",
-                code="secret_redacted",
-                message="Enable secrets were redacted from output",
-                field_key="system.secret",
-            )
-        )
-
     validate_ok = not any(i.severity == "error" for i in issues)
     return ValidationStatus(
         deserialize_ok=True,
