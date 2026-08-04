@@ -17,7 +17,7 @@ if ($Validate) {
 }
 
 if ($DryRun) {
-    Write-Host "Dry run — would push: git push public main"
+    Write-Host "Dry run - would push: git push public main"
     git log public/main..HEAD --oneline
     exit 0
 }
