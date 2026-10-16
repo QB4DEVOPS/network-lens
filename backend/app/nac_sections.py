@@ -1,7 +1,6 @@
 """NaC iosxe.devices[].configuration.* top-level sections (terraform-iosxe-nac-iosxe).
 
 Source of truth: netascode/terraform-iosxe-nac-iosxe device_config lookups.
-EIGRP omitted — not targeted for Network Lens wiring.
 """
 
 from __future__ import annotations
@@ -37,7 +36,7 @@ NAC_CONFIGURATION_SECTIONS: tuple[NacSection, ...] = (
     NacSection("policy_maps", "type: policy-map ..."),
     NacSection("parameter_maps", "type: parameter-map type ..."),
     NacSection("key_chains", "type: key chain ..."),
-    NacSection("routing", "type: router ospf 1 | router bgp ...", "NDO-174"),
+    NacSection("routing", "type: router ospf 1 | router bgp ... | router eigrp LAB", "NDO-174"),
     NacSection("vrfs", "type: vrf definition MGMT", "NDO-177"),
     NacSection("interfaces", "type: int lo0 | int g0/0/0 | int po1 | int nve1", "NDO-183"),
     NacSection("vlan", "type: vlan 10 ..."),
@@ -89,4 +88,8 @@ ROUTING_SUBSECTION_HINTS: tuple[NacSection, ...] = (
     NacSection("ospf_processes", "type: router ospf 1", "NDO-174"),
     NacSection("bgp", "type: router bgp 65000", "NDO-175"),
     NacSection("isis", "type: router isis CORE", "NDO-176"),
+    NacSection(
+        "eigrp_processes",
+        "type: router eigrp LAB | address-family ipv4 unicast autonomous-system 100",
+    ),
 )

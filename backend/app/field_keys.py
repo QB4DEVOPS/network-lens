@@ -104,6 +104,13 @@ def isis_key(field: str | None = None) -> str:
     return f"routing.isis.{field}"
 
 
+def eigrp_process_key(name: str, vrf: str | None = None, field: str | None = None) -> str:
+    """Key for one routing.eigrp_processes[] entry (vrf distinguishes a second AF)."""
+    ident = f"{name}@{vrf}" if vrf else str(name)
+    base = f"routing.eigrp_processes.{ident}"
+    return f"{base}.{field}" if field else base
+
+
 # ---------------------------------------------------------------------------
 # VRF / policy objects
 # ---------------------------------------------------------------------------

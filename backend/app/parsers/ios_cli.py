@@ -25,11 +25,15 @@ from app.models import (
     ClockConfig,
     CliFieldRef,
     Device,
+    EigrpNetwork,
+    EigrpProcess,
     ExtendedAccessList,
     Interface,
     Ipv6Address,
     IsisConfig,
     IsisNet,
+    NhrpMap,
+    NhrpNhs,
     OspfNetwork,
     OspfPassiveInterface,
     OspfProcess,
@@ -323,6 +327,16 @@ def normalize_interface_token(token: str) -> Interface | None:
             kind="ethernet",
             ethernet_type="GigabitEthernet",
             ethernet_id=eid,
+            shutdown=True,
+        )
+
+    tunnel_glued = re.match(r"^tunnel(\d+)$", lower)
+    if tunnel_glued:
+        num = tunnel_glued.group(1)
+        return Interface(
+            name=f"Tunnel{num}",
+            kind="tunnel",
+            tunnel_id=num,
             shutdown=True,
         )
 
@@ -728,6 +742,359 @@ def _ensure_bgp_ipv4_networks(bgp: BgpConfig) -> list[BgpNetwork]:
     return bgp.address_family.ipv4_unicast.networks
 
 
+_EIGRP_IPV4_AF = re.compile(
+    r"^address-family\s+ipv4(?:\s+unicast)?"
+    r"(?:\s+vrf\s+(?P<vrf_before>\S+))?"
+    r"\s+autonomous-system\s+(?P<asn>\d+)"
+    r"(?:\s+vrf\s+(?P<vrf_after>\S+))?$",
+    re.IGNORECASE,
+)
+
+_EIGRP_ASN_MIN = 1
+_EIGRP_ASN_MAX = 65535
+_TUNNEL_KEY_MAX = 4294967295
+
+
+def _parse_warning(warnings: list[ParseWarning], line_num: int, raw_line: str, message: str) -> None:
+    warnings.append(ParseWarning(line=line_num, message=message, cli_line=raw_line.strip()))
+
+
+def _get_eigrp_process(
+    device: Device,
+    name: str,
+    autonomous_system: int,
+    vrf: str | None,
+    *,
+    classic: bool,
+) -> EigrpProcess:
+    routing = device.configuration.routing
+    for proc in routing.eigrp_processes:
+        if proc.name == name and (proc.vrf or None) == (vrf or None):
+            if proc.autonomous_system is None:
+                proc.autonomous_system = autonomous_system
+            return proc
+    proc = EigrpProcess(
+        name=name,
+        autonomous_system=autonomous_system,
+        vrf=vrf,
+        classic=classic,
+    )
+    routing.eigrp_processes.append(proc)
+    return proc
+
+
+def _parse_eigrp_ipv4_af(line: str) -> tuple[int, str | None] | None:
+    match = _EIGRP_IPV4_AF.match(line.strip())
+    if not match:
+        return None
+    vrf = match.group("vrf_before") or match.group("vrf_after")
+    return int(match.group("asn")), vrf
+
+
+def _warn_eigrp_omitted(line: str, line_num: int, raw_line: str, warnings: list[ParseWarning]) -> None:
+    """Warn for EIGRP commands that have no routing.eigrp_processes field."""
+    lower = line.lower()
+    if "passive-interface" in lower:
+        message = "EIGRP passive-interface is not in the NaC schema (routing.eigrp_processes) — omitted"
+    elif lower.startswith("redistribute"):
+        message = "EIGRP redistribute is not in the NaC schema (routing.eigrp_processes) — omitted"
+    elif lower == "stub" or lower.startswith("stub ") or lower.startswith("eigrp stub"):
+        message = "EIGRP stub is not in the NaC schema (routing.eigrp_processes) — omitted"
+    else:
+        message = "EIGRP command is not in the NaC schema (routing.eigrp_processes) — omitted"
+    _parse_warning(warnings, line_num, raw_line, message)
+
+
+def _apply_eigrp_process_command(
+    line: str,
+    proc: EigrpProcess,
+    *,
+    line_num: int,
+    raw_line: str,
+    warnings: list[ParseWarning],
+    cli_refs: list[CliFieldRef],
+) -> str | None:
+    """Apply one command under an EIGRP process or IPv4 address-family.
+
+    Returns a submode name when the command enters af-interface, topology, or an
+    unsupported address-family. Returns None when the command stays in the AF.
+    """
+    lower = line.lower()
+
+    def mark(field: str, label: str) -> None:
+        cli_refs.append(
+            CliFieldRef(
+                cli_line=line_num,
+                field_key=fk.eigrp_process_key(proc.name, proc.vrf, field),
+                label=label,
+            )
+        )
+
+    if lower.startswith("af-interface"):
+        _parse_warning(
+            warnings,
+            line_num,
+            raw_line,
+            "EIGRP af-interface is not in the NaC schema (routing.eigrp_processes) — omitted",
+        )
+        return "af-interface"
+    if lower.startswith("topology "):
+        _parse_warning(
+            warnings,
+            line_num,
+            raw_line,
+            "EIGRP topology is not a NaC YAML field (iosxe_eigrp topology_base defaults to base) — omitted",
+        )
+        return "topology"
+    if re.match(r"^address-family\s+ipv6\b", line, re.IGNORECASE):
+        _parse_warning(
+            warnings,
+            line_num,
+            raw_line,
+            "EIGRP IPv6 address-family is not in the NaC schema (IPv4 unicast only) — omitted",
+        )
+        return "unsupported-af"
+    if (
+        "passive-interface" in lower
+        or lower.startswith("redistribute")
+        or lower == "stub"
+        or lower.startswith("stub ")
+        or lower.startswith("eigrp stub")
+    ):
+        _warn_eigrp_omitted(line, line_num, raw_line, warnings)
+        return None
+
+    router_id = re.match(r"^(?:eigrp\s+)?router-id\s+(\S+)$", line, re.IGNORECASE)
+    if router_id:
+        value = router_id.group(1)
+        if _looks_like_mask(value):
+            proc.router_id = value
+            mark("router_id", "eigrp router-id")
+        else:
+            _parse_warning(warnings, line_num, raw_line, "EIGRP router-id is not an IPv4 address — omitted")
+        return None
+
+    if lower.startswith("network "):
+        parts = line.split()
+        if len(parts) == 3 and _looks_like_mask(parts[1]) and _looks_like_mask(parts[2]):
+            proc.networks.append(EigrpNetwork(ip=parts[1], wildcard=parts[2]))
+            mark("networks", "network")
+        else:
+            _parse_warning(
+                warnings,
+                line_num,
+                raw_line,
+                "EIGRP network requires an IP and wildcard (schema networks[].ip and networks[].wildcard) — omitted",
+            )
+        return None
+
+    if lower == "no auto-summary":
+        proc.auto_summary = False
+        mark("auto_summary", "no auto-summary")
+        return None
+    if lower == "auto-summary":
+        proc.auto_summary = True
+        mark("auto_summary", "auto-summary")
+        return None
+    if lower == "shutdown":
+        proc.shutdown = True
+        mark("shutdown", "shutdown")
+        return None
+    if lower == "no shutdown":
+        proc.shutdown = False
+        mark("shutdown", "no shutdown")
+        return None
+
+    _warn_eigrp_omitted(line, line_num, raw_line, warnings)
+    return None
+
+
+def _apply_tunnel_command(
+    line: str,
+    iface: Interface,
+    *,
+    line_num: int,
+    raw_line: str,
+    warnings: list[ParseWarning],
+    cli_refs: list[CliFieldRef],
+) -> None:
+    """Apply tunnel/NHRP commands that exist on interfaces.tunnels[]."""
+    lower = line.lower()
+
+    def mark(suffix: str, label: str) -> None:
+        cli_refs.append(
+            CliFieldRef(cli_line=line_num, field_key=fk.interface_key(iface.name, suffix), label=label)
+        )
+
+    source = re.match(r"^tunnel\s+source\s+(.+)$", line, re.IGNORECASE)
+    if source:
+        iface.tunnel_source = source.group(1).strip()
+        mark("tunnel_source", "tunnel source")
+        return
+
+    destination = re.match(r"^tunnel\s+destination\s+(\S+)$", line, re.IGNORECASE)
+    if destination:
+        value = destination.group(1)
+        if _looks_like_mask(value):
+            iface.tunnel_destination_ipv4 = value
+            mark("tunnel_destination_ipv4", "tunnel destination")
+        else:
+            _parse_warning(
+                warnings,
+                line_num,
+                raw_line,
+                "tunnel destination hostnames are not in the NaC schema (tunnel_destination_ipv4 is an IP) — omitted",
+            )
+        return
+
+    if lower == "tunnel mode gre multipoint":
+        iface.tunnel_mode_gre_multipoint = True
+        mark("tunnel_mode_gre_multipoint", "tunnel mode gre multipoint")
+        return
+    if lower == "no tunnel mode gre multipoint":
+        iface.tunnel_mode_gre_multipoint = False
+        mark("tunnel_mode_gre_multipoint", "no tunnel mode gre multipoint")
+        return
+    if lower == "tunnel mode ipsec ipv4":
+        iface.tunnel_mode_ipsec_ipv4 = True
+        mark("tunnel_mode_ipsec_ipv4", "tunnel mode ipsec ipv4")
+        return
+    if lower.startswith("tunnel mode "):
+        _parse_warning(
+            warnings,
+            line_num,
+            raw_line,
+            "Tunnel mode is not in the NaC schema (only tunnel_mode_gre_multipoint and tunnel_mode_ipsec_ipv4) — omitted",
+        )
+        return
+
+    key_match = re.match(r"^tunnel\s+key\s+(\d+)$", line, re.IGNORECASE)
+    if key_match:
+        value = int(key_match.group(1))
+        if 0 <= value <= _TUNNEL_KEY_MAX:
+            iface.tunnel_key = value
+            mark("tunnel_key", "tunnel key")
+        else:
+            _parse_warning(
+                warnings,
+                line_num,
+                raw_line,
+                "tunnel key is outside the schema range 0-4294967295 — omitted",
+            )
+        return
+
+    protection = re.match(
+        r"^tunnel\s+protection\s+ipsec\s+profile\s+(\S+)(?:\s+(\S+))?$",
+        line,
+        re.IGNORECASE,
+    )
+    if protection:
+        iface.tunnel_protection_ipsec_profile = protection.group(1)
+        mark("tunnel_protection_ipsec_profile", "tunnel protection ipsec profile")
+        extra = protection.group(2)
+        if extra and extra.lower() == "shared":
+            _parse_warning(
+                warnings,
+                line_num,
+                raw_line,
+                "tunnel protection ipsec profile shared is not a NaC field — profile name only",
+            )
+        elif extra:
+            _parse_warning(
+                warnings,
+                line_num,
+                raw_line,
+                "Extra tunnel protection option is not in the NaC schema — omitted",
+            )
+        return
+
+    authentication = re.match(r"^ip\s+nhrp\s+authentication\s+(.+)$", line, re.IGNORECASE)
+    if authentication:
+        iface.ip_nhrp_authentication = authentication.group(1)
+        mark("ip_nhrp_authentication", "ip nhrp authentication")
+        return
+
+    network_id = re.match(r"^ip\s+nhrp\s+network-id\s+(\d+)$", line, re.IGNORECASE)
+    if network_id:
+        value = int(network_id.group(1))
+        if 1 <= value <= _TUNNEL_KEY_MAX:
+            iface.ip_nhrp_network_id = value
+            mark("ip_nhrp_network_id", "ip nhrp network-id")
+        else:
+            _parse_warning(
+                warnings,
+                line_num,
+                raw_line,
+                "ip nhrp network-id is outside the schema range 1-4294967295 — omitted",
+            )
+        return
+
+    nhs = re.match(r"^ip\s+nhrp\s+nhs\s+(\S+)(?:\s+(.*))?$", line, re.IGNORECASE)
+    if nhs:
+        if _looks_like_mask(nhs.group(1)):
+            iface.ip_nhrp_nhs.append(NhrpNhs(ipv4=nhs.group(1)))
+            mark("ip_nhrp_nhs", "ip nhrp nhs")
+            if nhs.group(2):
+                _parse_warning(
+                    warnings,
+                    line_num,
+                    raw_line,
+                    "ip nhrp nhs nbma/multicast suffixes are not NaC fields (ip_nhrp_nhs is ipv4 only) — omitted",
+                )
+        else:
+            _parse_warning(
+                warnings,
+                line_num,
+                raw_line,
+                "ip nhrp nhs dynamic is not in the NaC schema (ip_nhrp_nhs.ipv4 only) — omitted",
+            )
+        return
+
+    nhrp_map = re.match(r"^ip\s+nhrp\s+map\s+(\S+)\s+(\S+)$", line, re.IGNORECASE)
+    if nhrp_map and _looks_like_mask(nhrp_map.group(1)) and _looks_like_mask(nhrp_map.group(2)):
+        iface.ip_nhrp_maps.append(NhrpMap(dest_ipv4=nhrp_map.group(1), nbma_ipv4=nhrp_map.group(2)))
+        mark("ip_nhrp_maps", "ip nhrp map")
+        return
+    if lower.startswith("ip nhrp map "):
+        _parse_warning(
+            warnings,
+            line_num,
+            raw_line,
+            "ip nhrp map multicast/dynamic is not in the NaC schema (ip_nhrp_maps is dest_ipv4 and nbma_ipv4) — omitted",
+        )
+        return
+
+    if lower == "ip nhrp redirect":
+        iface.ip_nhrp_redirect = True
+        mark("ip_nhrp_redirect", "ip nhrp redirect")
+        return
+    if lower == "no ip nhrp redirect":
+        iface.ip_nhrp_redirect = False
+        mark("ip_nhrp_redirect", "no ip nhrp redirect")
+        return
+    if lower == "ip nhrp shortcut":
+        iface.ip_nhrp_shortcut = True
+        mark("ip_nhrp_shortcut", "ip nhrp shortcut")
+        return
+    if lower == "no ip nhrp shortcut":
+        iface.ip_nhrp_shortcut = False
+        mark("ip_nhrp_shortcut", "no ip nhrp shortcut")
+        return
+    if lower == "mpls nhrp":
+        iface.mpls_nhrp = True
+        mark("mpls_nhrp", "mpls nhrp")
+        return
+    if lower == "no mpls nhrp":
+        iface.mpls_nhrp = False
+        mark("mpls_nhrp", "no mpls nhrp")
+        return
+    if lower.startswith("ip nhrp"):
+        _parse_warning(warnings, line_num, raw_line, "NHRP command is not in the NaC tunnel schema — omitted")
+        return
+    if lower.startswith("tunnel ") or lower.startswith("no tunnel "):
+        _parse_warning(warnings, line_num, raw_line, "Tunnel command is not in the NaC tunnel schema — omitted")
+
+
 def _get_isis(device: Device, area_tag: str | None = None) -> IsisConfig:
     routing = device.configuration.routing
     if routing.isis is None:
@@ -880,6 +1247,12 @@ def parse_cli(cli_text: str) -> ParseResult:
     current_router: str | None = None
     current_ospf_id: str | int | None = None
     current_isis_tag: str | None = None
+    current_eigrp: EigrpProcess | None = None
+    current_eigrp_name: str | None = None
+    current_eigrp_sub: str | None = None
+    eigrp_named_without_af = False
+    eigrp_router_line: int | None = None
+    eigrp_router_text = ""
     current_dhcp_pool: DhcpPool | None = None
     crypto_state = CryptoParseState()
 
@@ -912,9 +1285,24 @@ def parse_cli(cli_text: str) -> ParseResult:
 
     def leave_router() -> None:
         nonlocal current_router, current_ospf_id, current_isis_tag
+        nonlocal current_eigrp, current_eigrp_name, current_eigrp_sub, eigrp_named_without_af
+        nonlocal eigrp_router_line, eigrp_router_text
+        if eigrp_named_without_af and eigrp_router_line is not None:
+            _parse_warning(
+                warnings,
+                eigrp_router_line,
+                eigrp_router_text,
+                "Named EIGRP requires address-family ipv4 unicast autonomous-system — nothing emitted",
+            )
         current_router = None
         current_ospf_id = None
         current_isis_tag = None
+        current_eigrp = None
+        current_eigrp_name = None
+        current_eigrp_sub = None
+        eigrp_named_without_af = False
+        eigrp_router_line = None
+        eigrp_router_text = ""
 
     def leave_dhcp_pool() -> None:
         nonlocal current_dhcp_pool
@@ -1050,6 +1438,9 @@ def parse_cli(cli_text: str) -> ParseResult:
                 leave_interface()
         elif lower == "exit-address-family":
             leave_vrf_af()
+            if current_router == "eigrp":
+                current_eigrp = None
+                current_eigrp_sub = None
         elif lower.startswith("router "):
             parts = line.split()
             proto = parts[1].lower() if len(parts) >= 2 else ""
@@ -1089,14 +1480,54 @@ def parse_cli(cli_text: str) -> ParseResult:
                     )
                 )
             elif proto == "eigrp":
-                warnings.append(
-                    ParseWarning(
-                        line=line_num,
-                        message="EIGRP is not supported — skipped",
-                        cli_line=raw_line.strip(),
+                if len(parts) < 3:
+                    _parse_warning(
+                        warnings,
+                        line_num,
+                        raw_line,
+                        "EIGRP requires a process name or autonomous system — omitted",
                     )
-                )
-                leave_router()
+                    leave_router()
+                elif parts[2].isdigit():
+                    asn = int(parts[2])
+                    if not _EIGRP_ASN_MIN <= asn <= _EIGRP_ASN_MAX:
+                        _parse_warning(
+                            warnings,
+                            line_num,
+                            raw_line,
+                            "EIGRP autonomous-system is outside the schema range 1-65535 — omitted",
+                        )
+                        leave_router()
+                    else:
+                        current_router = "eigrp"
+                        current_eigrp_name = parts[2]
+                        current_eigrp = _get_eigrp_process(
+                            device, parts[2], asn, None, classic=True
+                        )
+                        eigrp_named_without_af = False
+                        eigrp_router_line = line_num
+                        eigrp_router_text = raw_line.strip()
+                        _parse_warning(
+                            warnings,
+                            line_num,
+                            raw_line,
+                            "Classic EIGRP (router eigrp <asn>) has no dedicated NaC resource; "
+                            "preview maps it to routing.eigrp_processes with name set to the autonomous system",
+                        )
+                        cli_refs.append(
+                            CliFieldRef(
+                                cli_line=line_num,
+                                field_key=fk.eigrp_process_key(parts[2]),
+                                label=f"router eigrp {parts[2]}",
+                            )
+                        )
+                else:
+                    current_router = "eigrp"
+                    current_eigrp_name = parts[2]
+                    current_eigrp = None
+                    eigrp_named_without_af = True
+                    eigrp_router_line = line_num
+                    eigrp_router_text = raw_line.strip()
             else:
                 leave_router()
         elif current_router == "ospf" and current_ospf_id is not None:
@@ -1194,6 +1625,75 @@ def parse_cli(cli_text: str) -> ParseResult:
                         label="is-type",
                     )
                 )
+        elif current_router == "eigrp":
+            if lower in {"exit-af-interface", "exit-af-topology"}:
+                current_eigrp_sub = None
+            elif lower.startswith("address-family "):
+                current_eigrp_sub = None
+                if re.match(r"^address-family\s+ipv6\b", line, re.IGNORECASE):
+                    current_eigrp = None
+                    current_eigrp_sub = "unsupported-af"
+                    _parse_warning(
+                        warnings,
+                        line_num,
+                        raw_line,
+                        "EIGRP IPv6 address-family is not in the NaC schema (IPv4 unicast only) — omitted",
+                    )
+                else:
+                    parsed_af = _parse_eigrp_ipv4_af(line)
+                    if parsed_af is None:
+                        current_eigrp = None
+                        _parse_warning(
+                            warnings,
+                            line_num,
+                            raw_line,
+                            "EIGRP address-family requires autonomous-system — omitted",
+                        )
+                    else:
+                        asn, vrf_name = parsed_af
+                        if not _EIGRP_ASN_MIN <= asn <= _EIGRP_ASN_MAX:
+                            current_eigrp = None
+                            _parse_warning(
+                                warnings,
+                                line_num,
+                                raw_line,
+                                "EIGRP autonomous-system is outside the schema range 1-65535 — omitted",
+                            )
+                        else:
+                            process_name = current_eigrp_name or str(asn)
+                            current_eigrp = _get_eigrp_process(
+                                device, process_name, asn, vrf_name, classic=False
+                            )
+                            eigrp_named_without_af = False
+                            cli_refs.append(
+                                CliFieldRef(
+                                    cli_line=line_num,
+                                    field_key=fk.eigrp_process_key(process_name, vrf_name),
+                                    label=line.strip(),
+                                )
+                            )
+            elif current_eigrp_sub in {"af-interface", "topology", "unsupported-af"}:
+                _warn_eigrp_omitted(line, line_num, raw_line, warnings)
+            elif current_eigrp is None:
+                _parse_warning(
+                    warnings,
+                    line_num,
+                    raw_line,
+                    "EIGRP command before IPv4 address-family is not applied — omitted",
+                )
+            else:
+                entered = _apply_eigrp_process_command(
+                    line,
+                    current_eigrp,
+                    line_num=line_num,
+                    raw_line=raw_line,
+                    warnings=warnings,
+                    cli_refs=cli_refs,
+                )
+                if entered:
+                    current_eigrp_sub = entered
+                    if entered == "unsupported-af":
+                        current_eigrp = None
         elif (vrf_def := re.match(r"^vrf definition\s+(\S+)$", line, re.IGNORECASE)):
             leave_interface()
             leave_nested()
@@ -1601,7 +2101,32 @@ def parse_cli(cli_text: str) -> ParseResult:
                             label="channel-group",
                         )
                     )
+            elif (
+                lower.startswith("tunnel ")
+                or lower.startswith("no tunnel ")
+                or lower.startswith("ip nhrp ")
+                or lower.startswith("no ip nhrp ")
+                or lower in {"mpls nhrp", "no mpls nhrp"}
+            ):
+                if current_iface.kind != "tunnel":
+                    _parse_warning(
+                        warnings,
+                        line_num,
+                        raw_line,
+                        "NHRP and tunnel commands are modeled on interfaces.tunnels only — omitted",
+                    )
+                else:
+                    _apply_tunnel_command(
+                        line,
+                        current_iface,
+                        line_num=line_num,
+                        raw_line=raw_line,
+                        warnings=warnings,
+                        cli_refs=cli_refs,
+                    )
+                    device.upsert_interface(current_iface)
 
         context_by_line[line_num] = current_iface.name if current_iface else None
 
+    leave_router()
     return ParseResult(device=device, warnings=warnings, cli_refs=cli_refs, context_by_line=context_by_line)

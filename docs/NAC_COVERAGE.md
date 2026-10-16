@@ -28,11 +28,12 @@ Legend: **Wired** = CLI parser + live YAML emitter | **Scaffold** = model + hint
 | `routing.ospf_processes` | Wired | |
 | `routing.bgp` | Wired | |
 | `routing.isis` | Wired | |
+| `routing.eigrp_processes` | Wired | Named mode. Classic `router eigrp <asn>` is previewed on the same list with `name` set to the AS. passive-interface, stub, and redistribute are not in the schema |
 | `vrfs` | Wired | NaC key is `vrfs` |
 | `interfaces.loopbacks` | Partial | |
 | `interfaces.ethernets` | Partial | |
 | `interfaces.vlans` | Partial | |
-| `interfaces.tunnels` | Partial | |
+| `interfaces.tunnels` | Partial | DMVPN: `tunnel_mode_gre_multipoint`, `tunnel_source`, `tunnel_key`, `tunnel_destination_ipv4`, `tunnel_protection_ipsec_profile`, `ip_nhrp_*`, `mpls_nhrp` |
 | `interfaces.port_channels` | Wired | |
 | `interfaces.port_channel_subinterfaces` | Wired | |
 | `interfaces.ethernet_subinterfaces` | Wired | |
@@ -50,7 +51,6 @@ Legend: **Wired** = CLI parser + live YAML emitter | **Scaffold** = model + hint
 | `bfd`, `cdp`, `lldp`, `spanning_tree`, `udld`, `vtp` | Scaffold | |
 | `pim`, `msdp`, `multicast` | Scaffold | |
 | `crypto`, `flow`, `license`, `service*` | Partial | IKEv2, IPsec, PKI trustpoints wired; GDOI/GET VPN not in NaC |
-| EIGRP | **Skipped** | not in Network Lens scope |
 
 ## Roadmap
 

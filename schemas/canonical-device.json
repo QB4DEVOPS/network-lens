@@ -247,7 +247,11 @@
           "items": { "$ref": "#/$defs/ospfProcess" }
         },
         "bgp": { "$ref": "#/$defs/bgpConfig" },
-        "isis": { "$ref": "#/$defs/isisConfig" }
+        "isis": { "$ref": "#/$defs/isisConfig" },
+        "eigrp_processes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/eigrpProcess" }
+        }
       }
     },
     "ospfNetwork": {
@@ -343,6 +347,30 @@
         "is_type": { "type": ["string", "null"] }
       }
     },
+    "eigrpNetwork": {
+      "type": "object",
+      "required": ["ip", "wildcard"],
+      "properties": {
+        "ip": { "type": "string" },
+        "wildcard": { "type": "string" }
+      }
+    },
+    "eigrpProcess": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string" },
+        "autonomous_system": { "type": ["integer", "null"] },
+        "vrf": { "type": ["string", "null"] },
+        "router_id": { "type": ["string", "null"] },
+        "networks": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/eigrpNetwork" }
+        },
+        "auto_summary": { "type": ["boolean", "null"] },
+        "shutdown": { "type": ["boolean", "null"] }
+      }
+    },
     "vrf": {
       "type": "object",
       "required": ["name"],
@@ -412,7 +440,37 @@
         "ipv4_dhcp": { "type": "boolean" },
         "vrf_forwarding": { "type": ["string", "null"] },
         "nat_inside": { "type": "boolean" },
-        "nat_outside": { "type": "boolean" }
+        "nat_outside": { "type": "boolean" },
+        "tunnel_source": { "type": ["string", "null"] },
+        "tunnel_destination_ipv4": { "type": ["string", "null"] },
+        "tunnel_mode_gre_multipoint": { "type": ["boolean", "null"] },
+        "tunnel_mode_ipsec_ipv4": { "type": ["boolean", "null"] },
+        "tunnel_key": { "type": ["integer", "null"] },
+        "tunnel_protection_ipsec_profile": { "type": ["string", "null"] },
+        "ip_nhrp_authentication": { "type": ["string", "null"] },
+        "ip_nhrp_network_id": { "type": ["integer", "null"] },
+        "ip_nhrp_nhs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["ipv4"],
+            "properties": { "ipv4": { "type": "string" } }
+          }
+        },
+        "ip_nhrp_maps": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["dest_ipv4", "nbma_ipv4"],
+            "properties": {
+              "dest_ipv4": { "type": "string" },
+              "nbma_ipv4": { "type": "string" }
+            }
+          }
+        },
+        "ip_nhrp_redirect": { "type": ["boolean", "null"] },
+        "ip_nhrp_shortcut": { "type": ["boolean", "null"] },
+        "mpls_nhrp": { "type": ["boolean", "null"] }
       }
     },
     "aaaConfig": {

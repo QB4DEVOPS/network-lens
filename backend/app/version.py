@@ -7,7 +7,7 @@ from pathlib import Path
 
 APP_DIR = Path(__file__).resolve().parent
 
-API_VERSION = "0.5.7"
+API_VERSION = "0.5.8"
 
 # Bump API_VERSION when response shape or behavior changes materially.
 FEATURES: list[str] = [
@@ -22,6 +22,8 @@ FEATURES: list[str] = [
     "wire_users",
     "wire_system_banner_clock_mtu",
     "wire_routing_ospf_bgp_isis",
+    "wire_routing_eigrp",
+    "wire_tunnel_nhrp",
     "wire_vrfs_access_lists_policy",
     "wire_aaa_snmp_ntp_nat_dhcp",
     "wire_extended_interfaces",

@@ -124,6 +124,102 @@ def _format_bgp_block(device: Device) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _hcl_quote(value: str) -> str:
+    escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{escaped}"'
+
+
+def _tf_label(prefix: str, *parts: str) -> str:
+    body = "_".join(
+        "".join(ch if ch.isalnum() or ch == "_" else "_" for ch in part) for part in parts if part
+    )
+    return f"{prefix}_{body}" if body else prefix
+
+
+def _format_eigrp_block(proc: object) -> str:
+    vrf = getattr(proc, "vrf", None)
+    resource = "iosxe_eigrp_vrf" if vrf else "iosxe_eigrp"
+    label = _tf_label("eigrp", str(getattr(proc, "name", "process")), vrf or "")
+    lines = [f'resource "{resource}" "{label}" {{', f"  name = {_hcl_quote(str(proc.name))}"]
+    if vrf:
+        lines.append(f"  vrf = {_hcl_quote(vrf)}")
+    if proc.autonomous_system is not None:
+        lines.append(f"  autonomous_system = {proc.autonomous_system}")
+    if proc.router_id:
+        lines.append(f"  router_id = {_hcl_quote(proc.router_id)}")
+    if proc.auto_summary is not None:
+        lines.append(f"  auto_summary = {'true' if proc.auto_summary else 'false'}")
+    if proc.shutdown is not None:
+        lines.append(f"  shutdown = {'true' if proc.shutdown else 'false'}")
+    if proc.networks:
+        lines.append("  networks = [")
+        for net in proc.networks:
+            lines.append(f"    {{ ip = {_hcl_quote(net.ip)}, wildcard = {_hcl_quote(net.wildcard)} }},")
+        lines.append("  ]")
+    lines.append("}")
+    return "\n".join(lines) + "\n"
+
+
+def _format_tunnel_block(iface: Interface) -> str:
+    num = int(iface.tunnel_id or "0")
+    shutdown_val = "true" if iface.shutdown else "false"
+    lines = [
+        f'resource "iosxe_interface_tunnel" "tun{num}" {{',
+        f"  name = {num}",
+        f"  shutdown = {shutdown_val}",
+    ]
+    if iface.description:
+        lines.append(f"  description = {_hcl_quote(iface.description)}")
+    if iface.ipv4_address and not iface.ipv4_dhcp:
+        lines.append(f"  ipv4_address = {_hcl_quote(iface.ipv4_address)}")
+        lines.append(f"  ipv4_address_mask = {_hcl_quote(iface.ipv4_address_mask or '255.255.255.255')}")
+    elif iface.ipv4_dhcp:
+        lines.append("  ipv4_address_dhcp = true")
+    if iface.vrf_forwarding:
+        lines.append(f"  vrf_forwarding = {_hcl_quote(iface.vrf_forwarding)}")
+    if iface.tunnel_source:
+        lines.append(f"  tunnel_source = {_hcl_quote(iface.tunnel_source)}")
+    if iface.tunnel_destination_ipv4:
+        lines.append(f"  tunnel_destination_ipv4 = {_hcl_quote(iface.tunnel_destination_ipv4)}")
+    if iface.tunnel_mode_gre_multipoint is not None:
+        lines.append(
+            f"  tunnel_mode_gre_multipoint = {'true' if iface.tunnel_mode_gre_multipoint else 'false'}"
+        )
+    if iface.tunnel_mode_ipsec_ipv4 is not None:
+        lines.append(f"  tunnel_mode_ipsec_ipv4 = {'true' if iface.tunnel_mode_ipsec_ipv4 else 'false'}")
+    if iface.tunnel_key is not None:
+        lines.append(f"  tunnel_key = {iface.tunnel_key}")
+    if iface.tunnel_protection_ipsec_profile:
+        lines.append(
+            f"  tunnel_protection_ipsec_profile = {_hcl_quote(iface.tunnel_protection_ipsec_profile)}"
+        )
+    if iface.ip_nhrp_authentication is not None:
+        lines.append(f"  ip_nhrp_authentication = {_hcl_quote(iface.ip_nhrp_authentication)}")
+    if iface.ip_nhrp_network_id is not None:
+        lines.append(f"  ip_nhrp_network_id = {iface.ip_nhrp_network_id}")
+    if iface.ip_nhrp_nhs:
+        lines.append("  ip_nhrp_nhs = [")
+        for nhs in iface.ip_nhrp_nhs:
+            lines.append(f"    {{ ipv4 = {_hcl_quote(nhs.ipv4)} }},")
+        lines.append("  ]")
+    if iface.ip_nhrp_maps:
+        lines.append("  ip_nhrp_maps = [")
+        for nhrp_map in iface.ip_nhrp_maps:
+            lines.append(
+                "    { dest_ipv4 = "
+                f"{_hcl_quote(nhrp_map.dest_ipv4)}, nbma_ipv4 = {_hcl_quote(nhrp_map.nbma_ipv4)} }},"
+            )
+        lines.append("  ]")
+    if iface.ip_nhrp_redirect is not None:
+        lines.append(f"  ip_nhrp_redirect = {'true' if iface.ip_nhrp_redirect else 'false'}")
+    if iface.ip_nhrp_shortcut is not None:
+        lines.append(f"  ip_nhrp_shortcut = {'true' if iface.ip_nhrp_shortcut else 'false'}")
+    if iface.mpls_nhrp is not None:
+        lines.append(f"  mpls_nhrp = {'true' if iface.mpls_nhrp else 'false'}")
+    lines.append("}")
+    return "\n".join(lines) + "\n"
+
+
 def _format_isis_block(device: Device) -> str:
     isis = device.configuration.routing.isis
     if isis is None:
@@ -312,6 +408,18 @@ def generate_terraform(device: Device) -> str:
     if routing.isis:
         parts.append("# iosxe.devices[].configuration.routing.isis → iosxe_isis")
         parts.append(_format_isis_block(device))
+    if routing.eigrp_processes:
+        parts.append(
+            "# iosxe.devices[].configuration.routing.eigrp_processes[] → iosxe_eigrp / iosxe_eigrp_vrf"
+        )
+        for proc in routing.eigrp_processes:
+            parts.append(_format_eigrp_block(proc))
+
+    tunnels = [i for i in device.interfaces if i.kind == "tunnel"]
+    if tunnels:
+        parts.append("# iosxe.devices[].configuration.interfaces.tunnels[] → iosxe_interface_tunnel")
+        for iface in sorted(tunnels, key=lambda i: int(i.tunnel_id or "0")):
+            parts.append(_format_tunnel_block(iface))
 
     port_channels = [i for i in device.interfaces if i.kind == "port_channel"]
     for iface in sorted(port_channels, key=lambda i: int(i.port_channel_id or "0")):
