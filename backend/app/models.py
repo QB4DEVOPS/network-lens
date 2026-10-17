@@ -69,6 +69,19 @@ class Ipv6Address(BaseModel):
     eui_64: bool = False
 
 
+class NhrpNhs(BaseModel):
+    """NaC interfaces.tunnels[].ip_nhrp_nhs[] — ipv4 only."""
+
+    ipv4: str
+
+
+class NhrpMap(BaseModel):
+    """NaC interfaces.tunnels[].ip_nhrp_maps[] — dest_ipv4 + nbma_ipv4."""
+
+    dest_ipv4: str
+    nbma_ipv4: str
+
+
 class Interface(BaseModel):
     name: str
     kind: str = "loopback"  # loopback | ethernet | tunnel | vlan | port_channel | ...
@@ -95,6 +108,19 @@ class Interface(BaseModel):
     vrf_forwarding: str | None = None
     nat_inside: bool = False
     nat_outside: bool = False
+    tunnel_source: str | None = None
+    tunnel_destination_ipv4: str | None = None
+    tunnel_mode_gre_multipoint: bool | None = None
+    tunnel_mode_ipsec_ipv4: bool | None = None
+    tunnel_key: int | None = None
+    tunnel_protection_ipsec_profile: str | None = None
+    ip_nhrp_authentication: str | None = None
+    ip_nhrp_network_id: int | None = None
+    ip_nhrp_nhs: list[NhrpNhs] = Field(default_factory=list)
+    ip_nhrp_maps: list[NhrpMap] = Field(default_factory=list)
+    ip_nhrp_redirect: bool | None = None
+    ip_nhrp_shortcut: bool | None = None
+    mpls_nhrp: bool | None = None
 
     @property
     def has_ipv6(self) -> bool:
@@ -334,11 +360,36 @@ class IsisConfig(BaseModel):
     model_config = {"extra": "allow"}
 
 
+class EigrpNetwork(BaseModel):
+    """NaC routing.eigrp_processes[].networks[] — both fields are mandatory upstream."""
+
+    ip: str
+    wildcard: str
+
+
+class EigrpProcess(BaseModel):
+    """NaC routing.eigrp_processes[] (named-mode shape).
+
+    ``classic`` records ``router eigrp <asn>`` so CLI regen can keep that dialect.
+    It is not a NaC key and is excluded from serialized output.
+    """
+
+    name: str
+    autonomous_system: int | None = None
+    vrf: str | None = None
+    router_id: str | None = None
+    networks: list[EigrpNetwork] = Field(default_factory=list)
+    auto_summary: bool | None = None
+    shutdown: bool | None = None
+    classic: bool = Field(default=False, exclude=True)
+
+
 class RoutingConfig(BaseModel):
     static_routes: list[StaticRoute] = Field(default_factory=list)
     ospf_processes: list[OspfProcess] = Field(default_factory=list)
     bgp: BgpConfig | None = None
     isis: IsisConfig | None = None
+    eigrp_processes: list[EigrpProcess] = Field(default_factory=list)
 
 
 class VrfAddressFamily(BaseModel):
@@ -840,6 +891,7 @@ class DeviceConfiguration(BaseModel):
                     or value.ospf_processes
                     or value.bgp
                     or value.isis
+                    or value.eigrp_processes
                 )
             if isinstance(value, AccessListsConfig):
                 return not (value.standard or value.extended or value.role_based)

@@ -347,6 +347,9 @@ def _format_tunnel(
     block_start = 1
 
     lines.append(f"        - id: '{iface.tunnel_id or '0'}'")
+    if iface.tunnel_id and str(iface.tunnel_id).isdigit():
+        # Schema key is `name` (integer). `id` is the existing preview key.
+        lines.append(f"          name: {int(iface.tunnel_id)}")
 
     if iface.description:
         desc_line = len(lines) + 1
@@ -378,6 +381,71 @@ def _format_tunnel(
         sd_line = len(lines) + 1
         lines.append("          shutdown: false")
         rel[f"{base}:shutdown"] = (sd_line, sd_line)
+
+    if iface.tunnel_source:
+        src_line = len(lines) + 1
+        lines.append(f"          tunnel_source: {_yaml_str(iface.tunnel_source)}")
+        rel[f"{base}:tunnel_source"] = (src_line, src_line)
+    if iface.tunnel_destination_ipv4:
+        dest_line = len(lines) + 1
+        lines.append(f"          tunnel_destination_ipv4: {_yaml_str(iface.tunnel_destination_ipv4)}")
+        rel[f"{base}:tunnel_destination_ipv4"] = (dest_line, dest_line)
+    if iface.tunnel_mode_gre_multipoint is not None:
+        mode_line = len(lines) + 1
+        mode_val = "true" if iface.tunnel_mode_gre_multipoint else "false"
+        lines.append(f"          tunnel_mode_gre_multipoint: {mode_val}")
+        rel[f"{base}:tunnel_mode_gre_multipoint"] = (mode_line, mode_line)
+    if iface.tunnel_mode_ipsec_ipv4 is not None:
+        ipsec_mode_line = len(lines) + 1
+        ipsec_mode_val = "true" if iface.tunnel_mode_ipsec_ipv4 else "false"
+        lines.append(f"          tunnel_mode_ipsec_ipv4: {ipsec_mode_val}")
+        rel[f"{base}:tunnel_mode_ipsec_ipv4"] = (ipsec_mode_line, ipsec_mode_line)
+    if iface.tunnel_key is not None:
+        key_line = len(lines) + 1
+        lines.append(f"          tunnel_key: {iface.tunnel_key}")
+        rel[f"{base}:tunnel_key"] = (key_line, key_line)
+    if iface.tunnel_protection_ipsec_profile:
+        prot_line = len(lines) + 1
+        lines.append(
+            f"          tunnel_protection_ipsec_profile: {_yaml_str(iface.tunnel_protection_ipsec_profile)}"
+        )
+        rel[f"{base}:tunnel_protection_ipsec_profile"] = (prot_line, prot_line)
+    if iface.ip_nhrp_authentication is not None:
+        auth_line = len(lines) + 1
+        lines.append(f"          ip_nhrp_authentication: {_yaml_str(iface.ip_nhrp_authentication)}")
+        rel[f"{base}:ip_nhrp_authentication"] = (auth_line, auth_line)
+    if iface.ip_nhrp_network_id is not None:
+        nid_line = len(lines) + 1
+        lines.append(f"          ip_nhrp_network_id: {iface.ip_nhrp_network_id}")
+        rel[f"{base}:ip_nhrp_network_id"] = (nid_line, nid_line)
+    if iface.ip_nhrp_nhs:
+        nhs_start = len(lines) + 1
+        lines.append("          ip_nhrp_nhs:")
+        for nhs in iface.ip_nhrp_nhs:
+            lines.append(f"          - ipv4: {_yaml_str(nhs.ipv4)}")
+        rel[f"{base}:ip_nhrp_nhs"] = (nhs_start, len(lines))
+    if iface.ip_nhrp_maps:
+        maps_start = len(lines) + 1
+        lines.append("          ip_nhrp_maps:")
+        for nhrp_map in iface.ip_nhrp_maps:
+            lines.append(f"          - dest_ipv4: {_yaml_str(nhrp_map.dest_ipv4)}")
+            lines.append(f"            nbma_ipv4: {_yaml_str(nhrp_map.nbma_ipv4)}")
+        rel[f"{base}:ip_nhrp_maps"] = (maps_start, len(lines))
+    if iface.ip_nhrp_redirect is not None:
+        redir_line = len(lines) + 1
+        redir_val = "true" if iface.ip_nhrp_redirect else "false"
+        lines.append(f"          ip_nhrp_redirect: {redir_val}")
+        rel[f"{base}:ip_nhrp_redirect"] = (redir_line, redir_line)
+    if iface.ip_nhrp_shortcut is not None:
+        short_line = len(lines) + 1
+        short_val = "true" if iface.ip_nhrp_shortcut else "false"
+        lines.append(f"          ip_nhrp_shortcut: {short_val}")
+        rel[f"{base}:ip_nhrp_shortcut"] = (short_line, short_line)
+    if iface.mpls_nhrp is not None:
+        mpls_line = len(lines) + 1
+        mpls_val = "true" if iface.mpls_nhrp else "false"
+        lines.append(f"          mpls_nhrp: {mpls_val}")
+        rel[f"{base}:mpls_nhrp"] = (mpls_line, mpls_line)
 
     rel[base] = (block_start, len(lines))
     return lines, rel
@@ -714,7 +782,7 @@ def _emit_vrfs(builder: _YamlBuilder, config: DeviceConfiguration) -> None:
 def _emit_routing(builder: _YamlBuilder, config: DeviceConfiguration) -> None:
     routing = config.routing
     has_static = bool(routing.static_routes)
-    has_other = bool(routing.ospf_processes or routing.bgp or routing.isis)
+    has_other = bool(routing.ospf_processes or routing.bgp or routing.isis or routing.eigrp_processes)
 
     if not has_static and not has_other:
         if not builder.show_hints:
@@ -821,6 +889,36 @@ def _emit_routing(builder: _YamlBuilder, config: DeviceConfiguration) -> None:
             builder.mark(fk.isis_key("is_type"), type_line, type_line)
         builder.mark(fk.isis_key(), isis_start, len(builder.lines))
 
+    if routing.eigrp_processes:
+        builder.append("        eigrp_processes:")
+        for proc in routing.eigrp_processes:
+            proc_key = fk.eigrp_process_key(proc.name, proc.vrf)
+            proc_start = len(builder.lines) + 1
+            builder.append(f"        - name: {_yaml_str(proc.name)}")
+            if proc.autonomous_system is not None:
+                builder.append(f"          autonomous_system: {proc.autonomous_system}")
+            if proc.vrf:
+                builder.append(f"          vrf: {_yaml_str(proc.vrf)}")
+            if proc.router_id:
+                rid_line = len(builder.lines) + 1
+                builder.append(f"          router_id: {_yaml_str(proc.router_id)}")
+                builder.mark(fk.eigrp_process_key(proc.name, proc.vrf, "router_id"), rid_line, rid_line)
+            if proc.auto_summary is not None:
+                summary_line = builder.append(
+                    f"          auto_summary: {'true' if proc.auto_summary else 'false'}"
+                )
+                builder.mark(fk.eigrp_process_key(proc.name, proc.vrf, "auto_summary"), summary_line, summary_line)
+            if proc.shutdown is not None:
+                shut_line = builder.append(f"          shutdown: {'true' if proc.shutdown else 'false'}")
+                builder.mark(fk.eigrp_process_key(proc.name, proc.vrf, "shutdown"), shut_line, shut_line)
+            if proc.networks:
+                nets_start = builder.append("          networks:")
+                for net in proc.networks:
+                    builder.append(f"          - ip: {_yaml_str(net.ip)}")
+                    builder.append(f"            wildcard: {_yaml_str(net.wildcard)}")
+                builder.mark(fk.eigrp_process_key(proc.name, proc.vrf, "networks"), nets_start, len(builder.lines))
+            builder.mark(proc_key, proc_start, len(builder.lines))
+
     for subsection in ROUTING_SUBSECTION_HINTS:
         if subsection.key == "static_routes":
             continue
@@ -829,6 +927,8 @@ def _emit_routing(builder: _YamlBuilder, config: DeviceConfiguration) -> None:
         if subsection.key == "bgp" and routing.bgp:
             continue
         if subsection.key == "isis" and routing.isis:
+            continue
+        if subsection.key == "eigrp_processes" and routing.eigrp_processes:
             continue
         if not config.section_is_empty("routing") and has_static and not has_other:
             builder.hint_line(f"        {subsection.key}:{_section_hint(subsection.hint)}")

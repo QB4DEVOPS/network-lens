@@ -49,6 +49,31 @@ router ospf 1
     """router isis CORE
  net 49.0001.0000.0001.00
  is-type level-2-only""",
+    """router eigrp LAB
+ address-family ipv4 unicast autonomous-system 100
+  eigrp router-id 192.0.2.1
+  network 10.10.0.0 0.0.255.255
+  no auto-summary
+ exit-address-family
+ address-family ipv4 unicast vrf RED autonomous-system 100
+  network 10.20.0.0 0.0.255.255
+  shutdown""",
+    """interface Tunnel100
+ description overlay
+ ip address 10.0.0.1 255.255.255.0
+ no shutdown
+ ip nhrp authentication nhrp-key
+ ip nhrp network-id 100
+ ip nhrp nhs 10.0.0.254
+ ip nhrp map 10.0.0.2 192.0.2.10
+ ip nhrp redirect
+ ip nhrp shortcut
+ mpls nhrp
+ tunnel source GigabitEthernet1
+ tunnel destination 192.0.2.20
+ tunnel mode gre multipoint
+ tunnel key 10
+ tunnel protection ipsec profile LAB-IPSEC""",
     """aaa new-model
 aaa authentication login default local
 aaa authorization exec default local

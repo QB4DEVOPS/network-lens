@@ -30,6 +30,33 @@ def _iface_lines(iface: Interface) -> list[str]:
         lines.append(" ip nat inside")
     if iface.nat_outside:
         lines.append(" ip nat outside")
+    if iface.kind == "tunnel":
+        if iface.ip_nhrp_authentication is not None:
+            lines.append(f" ip nhrp authentication {iface.ip_nhrp_authentication}")
+        if iface.ip_nhrp_network_id is not None:
+            lines.append(f" ip nhrp network-id {iface.ip_nhrp_network_id}")
+        for nhs in iface.ip_nhrp_nhs:
+            lines.append(f" ip nhrp nhs {nhs.ipv4}")
+        for nhrp_map in iface.ip_nhrp_maps:
+            lines.append(f" ip nhrp map {nhrp_map.dest_ipv4} {nhrp_map.nbma_ipv4}")
+        if iface.ip_nhrp_redirect:
+            lines.append(" ip nhrp redirect")
+        if iface.ip_nhrp_shortcut:
+            lines.append(" ip nhrp shortcut")
+        if iface.mpls_nhrp:
+            lines.append(" mpls nhrp")
+        if iface.tunnel_source:
+            lines.append(f" tunnel source {iface.tunnel_source}")
+        if iface.tunnel_destination_ipv4:
+            lines.append(f" tunnel destination {iface.tunnel_destination_ipv4}")
+        if iface.tunnel_mode_gre_multipoint:
+            lines.append(" tunnel mode gre multipoint")
+        if iface.tunnel_mode_ipsec_ipv4:
+            lines.append(" tunnel mode ipsec ipv4")
+        if iface.tunnel_key is not None:
+            lines.append(f" tunnel key {iface.tunnel_key}")
+        if iface.tunnel_protection_ipsec_profile:
+            lines.append(f" tunnel protection ipsec profile {iface.tunnel_protection_ipsec_profile}")
     return lines
 
 
@@ -159,6 +186,54 @@ def _routing_lines(device: Device) -> list[str]:
             lines.append(f" net {net.tag}")
         if getattr(isis, "is_type", None):
             lines.append(f" is-type {isis.is_type}")
+    lines.extend(_eigrp_lines(routing))
+    return lines
+
+
+def _eigrp_af_body(proc: object, indent: str) -> list[str]:
+    body: list[str] = []
+    router_id = getattr(proc, "router_id", None)
+    if router_id:
+        body.append(f"{indent}eigrp router-id {router_id}")
+    for net in getattr(proc, "networks", []) or []:
+        body.append(f"{indent}network {net.ip} {net.wildcard}")
+    auto_summary = getattr(proc, "auto_summary", None)
+    if auto_summary is False:
+        body.append(f"{indent}no auto-summary")
+    elif auto_summary is True:
+        body.append(f"{indent}auto-summary")
+    shutdown = getattr(proc, "shutdown", None)
+    if shutdown is True:
+        body.append(f"{indent}shutdown")
+    elif shutdown is False:
+        body.append(f"{indent}no shutdown")
+    return body
+
+
+def _eigrp_lines(routing: object) -> list[str]:
+    lines: list[str] = []
+    processes = getattr(routing, "eigrp_processes", []) or []
+    classic = [proc for proc in processes if getattr(proc, "classic", False)]
+    named = [proc for proc in processes if not getattr(proc, "classic", False)]
+    for proc in classic:
+        asn = proc.autonomous_system if proc.autonomous_system is not None else proc.name
+        lines.append(f"router eigrp {asn}")
+        lines.extend(_eigrp_af_body(proc, " "))
+    grouped: dict[str, list[object]] = {}
+    order: list[str] = []
+    for proc in named:
+        if proc.name not in grouped:
+            order.append(proc.name)
+            grouped[proc.name] = []
+        grouped[proc.name].append(proc)
+    for name in order:
+        lines.append(f"router eigrp {name}")
+        for proc in grouped[name]:
+            vrf = f" vrf {proc.vrf}" if proc.vrf else ""
+            asn = proc.autonomous_system if proc.autonomous_system is not None else ""
+            lines.append(f" address-family ipv4 unicast{vrf} autonomous-system {asn}")
+            lines.extend(_eigrp_af_body(proc, "  "))
+            lines.append(" exit-address-family")
     return lines
 
 

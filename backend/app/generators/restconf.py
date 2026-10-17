@@ -76,6 +76,39 @@ def _iface_json(iface: Interface) -> dict[str, object]:
     if iface.vrf_forwarding:
         entry["openconfig-network-instance:bind-ni-name"] = iface.vrf_forwarding
 
+    if iface.kind == "tunnel":
+        overlay: dict[str, object] = {}
+        if iface.tunnel_source:
+            overlay["tunnel_source"] = iface.tunnel_source
+        if iface.tunnel_destination_ipv4:
+            overlay["tunnel_destination_ipv4"] = iface.tunnel_destination_ipv4
+        if iface.tunnel_mode_gre_multipoint is not None:
+            overlay["tunnel_mode_gre_multipoint"] = iface.tunnel_mode_gre_multipoint
+        if iface.tunnel_mode_ipsec_ipv4 is not None:
+            overlay["tunnel_mode_ipsec_ipv4"] = iface.tunnel_mode_ipsec_ipv4
+        if iface.tunnel_key is not None:
+            overlay["tunnel_key"] = iface.tunnel_key
+        if iface.tunnel_protection_ipsec_profile:
+            overlay["tunnel_protection_ipsec_profile"] = iface.tunnel_protection_ipsec_profile
+        if iface.ip_nhrp_authentication is not None:
+            overlay["ip_nhrp_authentication"] = iface.ip_nhrp_authentication
+        if iface.ip_nhrp_network_id is not None:
+            overlay["ip_nhrp_network_id"] = iface.ip_nhrp_network_id
+        if iface.ip_nhrp_nhs:
+            overlay["ip_nhrp_nhs"] = [{"ipv4": nhs.ipv4} for nhs in iface.ip_nhrp_nhs]
+        if iface.ip_nhrp_maps:
+            overlay["ip_nhrp_maps"] = [
+                {"dest_ipv4": item.dest_ipv4, "nbma_ipv4": item.nbma_ipv4} for item in iface.ip_nhrp_maps
+            ]
+        if iface.ip_nhrp_redirect is not None:
+            overlay["ip_nhrp_redirect"] = iface.ip_nhrp_redirect
+        if iface.ip_nhrp_shortcut is not None:
+            overlay["ip_nhrp_shortcut"] = iface.ip_nhrp_shortcut
+        if iface.mpls_nhrp is not None:
+            overlay["mpls_nhrp"] = iface.mpls_nhrp
+        if overlay:
+            entry["tunnel"] = overlay
+
     return entry
 
 
@@ -205,6 +238,24 @@ def _routing_native(device: Device) -> dict[str, object] | None:
         if isis.is_type:
             isis_entry["is-type"] = isis.is_type
         router["router-isis"] = {"isis": isis_entry}
+    if routing.eigrp_processes:
+        eigrp_entries: list[dict[str, object]] = []
+        for proc in routing.eigrp_processes:
+            entry: dict[str, object] = {"name": proc.name}
+            if proc.autonomous_system is not None:
+                entry["autonomous_system"] = proc.autonomous_system
+            if proc.vrf:
+                entry["vrf"] = proc.vrf
+            if proc.router_id:
+                entry["router_id"] = proc.router_id
+            if proc.networks:
+                entry["networks"] = [{"ip": net.ip, "wildcard": net.wildcard} for net in proc.networks]
+            if proc.auto_summary is not None:
+                entry["auto_summary"] = proc.auto_summary
+            if proc.shutdown is not None:
+                entry["shutdown"] = proc.shutdown
+            eigrp_entries.append(entry)
+        router["eigrp_processes"] = eigrp_entries
     return router or None
 
 

@@ -758,10 +758,17 @@ def test_isis_routing_parsed_and_emitted():
     assert "isis:  # ←" not in yaml_out
 
 
-def test_eigrp_skipped_with_warning():
+def test_classic_eigrp_maps_onto_named_schema():
     result = parse_cli("router eigrp 1")
-    assert not result.device.configuration.routing.ospf_processes
-    assert any("EIGRP" in w.message for w in result.warnings)
+    proc = result.device.configuration.routing.eigrp_processes[0]
+    assert proc.name == "1"
+    assert proc.autonomous_system == 1
+    assert proc.classic is True
+    assert any("Classic EIGRP" in w.message for w in result.warnings)
+    yaml_out = generate_nac_yaml(result.device).content
+    assert "eigrp_processes:" in yaml_out
+    assert 'name: "1"' in yaml_out
+    assert "autonomous_system: 1" in yaml_out
 
 
 def test_routing_generators_include_protocols():
